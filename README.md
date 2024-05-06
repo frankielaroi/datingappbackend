@@ -77,6 +77,8 @@ The backend exposes the following endpoints:
 - `GET /api/users/:id` - Fetch a single user
 - `PUT /api/users?id=<user_id>` - Update a user profile
 - `DELETE /api/users?id=<user_id>` - Delete a user
+-  `GET /api/search?query=<search_query>` - Search users by name or username
+
 
 ## Contributing
 
