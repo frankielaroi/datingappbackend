@@ -42,7 +42,7 @@ Before you begin, ensure you have the following installed on your local machine:
 
 2. Navigate to the project directory:
 
-   cd dating-app-backend
+   cd datingappbackend
 
 3. Install dependencies:
 
