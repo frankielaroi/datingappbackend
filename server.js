@@ -36,12 +36,14 @@ app.use(cors());
 const authRoutes = require("./routes/AuthRoutes");
 const userRoutes = require("./routes/UserRoutes");
 const resetRoutes = require("./routes/resetRoutes")
-const matchingRoutes =require("./routes/matchingRoutes")
+const matchingRoutes = require("./routes/matchingRoutes")
+const searchRoutes = require("./routes/searchRoutes")
 // Mount route handler modules at base paths
 app.use(authRoutes);
 app.use(userRoutes);
 app.use(resetRoutes);
 app.use(matchingRoutes);
+app.use(searchRoutes);
 
 
 // Start the server and listen on specified port
