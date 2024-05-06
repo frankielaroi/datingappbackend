@@ -42,12 +42,10 @@ Before you begin, ensure you have the following installed on your local machine:
 
 2. Navigate to the project directory:
 
-   bash
    cd dating-app-backend
 
 3. Install dependencies:
 
-   bash
    npm install
 
 ### Configuration
