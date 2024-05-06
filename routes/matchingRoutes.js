@@ -6,12 +6,18 @@ router.post("/api/match/", async (req, res) => {
   try {
     const { id } = req.body; // Extract id from request body
 
-    console.log("Entering /api/match route");
-    console.log(`User ID: ${id}`);
+    // Validate the request body
+    if (!id) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
 
     // Fetch user preferences based on user ID
     const userPreferences = await User.findById(id).lean();
-    console.log("User preferences fetched:", userPreferences);
+
+    // Check if user preferences exist
+    if (!userPreferences) {
+      return res.status(404).json({ error: "User not found" });
+    }
 
     // Ensure that user preferences are retrieved and fallback to an empty object if not found
     const userPrefs = userPreferences?.matchPreferences || {};
@@ -46,17 +52,13 @@ router.post("/api/match/", async (req, res) => {
       _id: { $ne: id }, // Exclude the user's own data
     });
 
-    console.log("Matches found:", matches);
-
     if (matches.length === 0) {
-      console.log("No matches found, fetching available people");
       const availablePeople = await User.find(
         { _id: { $ne: id } },
         { _id: 0, preferences: 1 }
       ); // Exclude the user's own data
       res.status(200).json(availablePeople);
     } else {
-      console.log("Sending top 10 matches");
       res.status(200).json(matches.slice(0, 10));
     }
   } catch (error) {

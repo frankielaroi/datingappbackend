@@ -15,8 +15,8 @@ router.use(express.json());
 // Function to send OTP via SMS using Arkesel SMS API
 async function sendOtpViaSms(mobileNumber, otp) {
   const arkeselUrl = "https://sms.arkesel.com/sms/api?action=send-sms";
-  const arkeselApiKey = "ZW50TkJhTWdEZVZnRGJMUk1GdUw";
-  const arkeselSender = "Dating App"; // Replace with your sender name
+  const arkeselApiKey = process.env.ARKESEL_API_KEY ;
+  const arkeselSender = process.env.ARKESEL_SENDER;
   const message = `Your verification code is: ${otp}`;
 
   const apiUrl = `${arkeselUrl}&api_key=${arkeselApiKey}&to=${mobileNumber}&from=${arkeselSender}&sms=${message}`;
@@ -89,6 +89,7 @@ router.post("/api/register", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 // Route to handle email verification
 router.get("/api/verify-email", async (req, res) => {
   try {

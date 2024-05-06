@@ -7,7 +7,7 @@ const bcrypt = require("bcrypt");
 const router = express.Router();
 
 // Route to handle password reset request
-router.post('/forgot-password', async (req, res) => {
+router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
 
   try {
@@ -17,9 +17,9 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     const resetToken = crypto.randomBytes(20).toString("hex");
-user.resetPasswordToken = resetToken;
-user.resetPasswordExpires = Date.now() + 3600000; // Token expires in 1 hour
-await user.save();
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 3600000; // Token expires in 1 hour
+    await user.save();
 
     const mailSender = process.env.MAIL_SENDER;
     const mailPassword = process.env.MAIL_PASSWORD;
@@ -41,7 +41,6 @@ await user.save();
 
     await transporter.sendMail(mailOptions);
     res.status(200).json({ message: "Password reset email sent" });
-    console.log(resetToken)
   } catch (error) {
     console.error("Error in forgot password:", error);
     res.status(500).json({ message: "Internal Server Error" });
