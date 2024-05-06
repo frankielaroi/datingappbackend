@@ -50,23 +50,13 @@ Before you begin, ensure you have the following installed on your local machine:
 
 ### Configuration
 
-Create a `.env` file in the root directory based on the `.env.example` template:
+Already configured
 
-makefile
-PORT=3000
-MONGODB_URI=mongodb://localhost:27017/dating-app
-JWT_SECRET=your_jwt_secret_here
-MAIL_SENDER=your_email_address@gmail.com
-MAIL_PASSWORD=your_email_password
-
-Replace `your_jwt_secret_here` with a random string for JWT token generation.
-Set `MAIL_SENDER` and `MAIL_PASSWORD` with valid Gmail credentials for sending verification emails.
 
 ## Usage
 
 Start the server:
 
-bash
 npm start
 
 The server will be running at `http://localhost:4001` by default.
