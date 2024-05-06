@@ -38,7 +38,7 @@ Before you begin, ensure you have the following installed on your local machine:
 1. Clone this repository:
 
    bash
-   git clone https://github.com/your-username/dating-app-backend.git
+   git clone https://github.com/frankielaroi/datingappbackend.git
 
 2. Navigate to the project directory:
 
