@@ -71,7 +71,7 @@ Start the server:
 bash
 npm start
 
-The server will be running at `http://localhost:3000` by default.
+The server will be running at `http://localhost:4001` by default.
 
 ## Endpoints
 
