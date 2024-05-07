@@ -309,6 +309,26 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now, // Default value for updatedAt is the current date/time
   },
+   comments: [
+    {
+      content: { type: String, required: true },
+      postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true }
+    }
+  ],
+
+  // Likes (for posts)
+  likes: [
+    {
+      postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true }
+    }
+  ],
+
+  // Shared posts
+  shares: [
+    {
+      postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true }
+    }
+  ]
 });
 
 // Create indexes on specified fields

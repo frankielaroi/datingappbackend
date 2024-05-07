@@ -38,12 +38,14 @@ const userRoutes = require("./routes/UserRoutes");
 const resetRoutes = require("./routes/resetRoutes")
 const matchingRoutes = require("./routes/matchingRoutes")
 const searchRoutes = require("./routes/searchRoutes")
+const postRoutes = require("./routes/postRoutes");
 // Mount route handler modules at base paths
 app.use(authRoutes);
 app.use(userRoutes);
 app.use(resetRoutes);
 app.use(matchingRoutes);
 app.use(searchRoutes);
+app.use(postRoutes)
 
 
 // Start the server and listen on specified port
