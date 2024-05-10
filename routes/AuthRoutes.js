@@ -9,7 +9,7 @@ const otpGenerator = require("otp-generator");
 const sendEmailVerification = require("../controllers/emailVerification");
 // Create an Express app instances
 const router = express.Router();
-const JWT_SECRET = crypto.randomBytes(32).toString("hex");
+const JWT_SECRET = process.env.JWT_SECRET;
 router.use(express.json());
 
 // Function to send OTP via SMS using Arkesel SMS API
