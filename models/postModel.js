@@ -90,6 +90,13 @@ postSchema.virtual("totalComments").get(function () {
   return this.comments.length;
 });
 
+// Create a compound index for searching
+postSchema.index({ content: "text", "comments.content": "text" });
+postSchema.index({ likes: 1 }, { sparse: true });
+postSchema.index({ 'comments.content': 'text', 'comments.createdAt': 1 });
+postSchema.index({ content: 'text', createdAt: 1 });
+postSchema.index({ shares: 1 }, { partialFilterExpression: { 'shares.userId': { $exists: true } } });
+
 // Create a Post model based on the schema
 const Post = mongoose.model("Post", postSchema);
 
