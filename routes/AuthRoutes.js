@@ -1,8 +1,7 @@
 // Import required packages and modules
 const express = require("express");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const User = require("../models/usermodel");
 const axios = require("axios");
 const otpGenerator = require("otp-generator");
@@ -55,8 +54,8 @@ router.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "User already exists" });
     }
 
-    // Hash the password using bcrypt
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash the password using crypto
+    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
 
     // Generate email verification token
     const emailVerificationToken = crypto.randomBytes(32).toString("hex");
@@ -187,7 +186,8 @@ router.post("/api/auth/login", async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     // Compare the password with the hashed password stored in the database
-    const isMatch = await bcrypt.compare(password, user.password);
+    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
+    const isMatch = hashedPassword === user.password;
 
     // Check if passwords match
     if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
