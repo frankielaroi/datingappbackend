@@ -3,6 +3,7 @@
     "amqplib": "^0.10.4",
     "axios": "^1.6.8",
     "body-parser": "^1.20.2",
+    "bull": "^4.13.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -14,6 +15,7 @@
     "node-cache": "^5.1.2",
     "nodemailer": "^6.9.13",
     "otp-generator": "^4.0.1",
+    "redis": "^4.6.14",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
     "stream-chat": "^8.31.0"
