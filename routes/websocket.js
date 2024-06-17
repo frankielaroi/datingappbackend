@@ -1,38 +1,43 @@
-const express = require("express");
-const router = express.Router();
-const Conversation = require("../models/conversationModel");
-const Message = require("../models/messageModel");
-const { verifyToken } = require("../controllers/verifyToken");
-const { Server: SocketIOServer } = require("socket.io");
-const socketServer = new SocketIOServer();
-const io = socketServer.of("/");
-const jwt = require("jsonwebtoken");
+// webSocketServer.js
+const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
+const Conversation = require('../models/conversationModel');
+const Message = require('../models/messageModel');
 
-// Handle WebSocket connections
-module.exports = (io) => {
-  io.on("connection", (socket) => {
-    console.log("New client connected");
+const messageSockets = (httpServer) => {
+  const io = new Server(httpServer, {
+    cors: {
+      methods: ['GET', 'POST'],
+      credentials: true,
+    },
+  });
 
-    socket.on("joinConversation", async (conversationId) => {
-      socket.join(conversationId);
-      console.log(`Client joined conversation: ${conversationId}`);
+  io.on('connection', (socket) => {
+    console.log('New client connected');
+
+    socket.on('joinConversation', async (conversationId) => {
+      try {
+        socket.join(conversationId);
+        console.log(`Client joined conversation: ${conversationId}`);
+      } catch (error) {
+        console.error('Error joining conversation:', error);
+      }
     });
 
-    socket.on("sendMessage", async (data) => {
+    socket.on('sendMessage', async (data) => {
       try {
         const { conversationId, text } = data;
-        const token = socket.handshake.headers.token;
+        const token = socket.handshake.auth.token;
         const userId = jwt.verify(token, process.env.JWT_SECRET).userId;
+
         const message = new Message({
           conversationId,
           sender: userId,
           text,
         });
 
-        // Save the message to the database
         const savedMessage = await message.save();
 
-        // Update the conversation with the new message ID
         const conversation = await Conversation.findByIdAndUpdate(
           conversationId,
           {
@@ -42,17 +47,24 @@ module.exports = (io) => {
           { new: true }
         );
 
-        // Emit the new message to clients in the conversation room
-        io.to(conversationId).emit("newMessage", savedMessage);
+        io.to(conversationId).emit('newMessage', savedMessage);
 
-        console.log("Message sent successfully");
+        console.log('Message sent successfully');
       } catch (error) {
-        console.error("Error sending message:", error);
+        console.error('Error sending message:', error);
       }
     });
 
-    socket.on("disconnect", () => {
-      console.log("Client disconnected");
+    socket.on('disconnect', () => {
+      console.log('Client disconnected');
+    });
+
+    socket.on('error', (error) => {
+      console.error('Socket error:', error);
     });
   });
+
+  return io;
 };
+
+module.exports = messageSockets;

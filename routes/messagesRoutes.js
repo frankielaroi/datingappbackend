@@ -3,57 +3,15 @@ const router = express.Router();
 const Conversation = require("../models/conversationModel");
 const Message = require("../models/messageModel");
 const { verifyToken } = require("../controllers/verifyToken");
-/*const { Server: SocketIOServer } = require("socket.io");
-
-// Initialize Socket.IO server
-const socketServer = new SocketIOServer();
-const io = socketServer.of("/");
-
-// Handle WebSocket connections
-io.on("connection", (socket) => {
-  console.log("New client connected");
-
-  socket.on("sendMessage", async (data) => {
-  try {
-    const { conversationId, text } = data;
-    const message = new Message({
-      conversationId,
-      sender: socket.request.user.userId,
-      text,
-    });
-    console.log('message')
-
-    // Save the message to the database
-    await message.save();
-    console.log('message saved')
-
-    // Update the conversation with the new message ID
-    await Conversation.findByIdAndUpdate(conversationId, {
-      $push: { messages: message._id },
-      $set: { updatedAt: Date.now() },
-    });
-
-    // Emit the new message to clients in the conversation room
-    io.emit("newMessage", message);
-
-    console.log("Message sent successfully");
-  } catch (error) {
-    console.error("Error sending message:", error);
-  }
-});
-
-  socket.on("joinConversation", (conversationId) => {
-    socket.join(conversationId);
-    console.log(`Client joined conversation: ${conversationId}`);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected");
-  });
-});*/
+const jwt = require("jsonwebtoken");
+const amqp = require("amqplib");
 
 // Define a POST route for sending messages
-// I didn't see the socket.io request in my database
+// To test this route with Postman:
+// 1. Set the request method to POST
+// 2. Set the URL to http://localhost:3000/api/message (or your server URL)
+// 3. Set the request headers to include 'Authorization' with a valid JWT token
+// 4. Set the request body to include 'conversationId' and 'text' fields
 router.post("/api/message", verifyToken, async (req, res) => {
   try {
     const { conversationId, text } = req.body;
@@ -65,17 +23,24 @@ router.post("/api/message", verifyToken, async (req, res) => {
 
     await message.save();
 
-    // Emit event to join conversation room
-    io.to(conversationId).emit("joinConversation", conversationId);
+    // Publish message to RabbitMQ
+    const connection = await amqp.connect("amqps://ztjiqgzl:KxM5gy3UPX8-90ED_dz5E3d8erVcCOUh@woodpecker.rmq.cloudamqp.com/ztjiqgzl");
+    const channel = await connection.createChannel();
+    const exchange = "messages";
+    await channel.assertExchange(exchange, "fanout", { durable: false });
+    channel.publish(
+      exchange,
+      "",
+      Buffer.from(
+        JSON.stringify({
+          conversationId,
+          sender: req.user.userId,
+          text,
+        })
+      )
+    );
 
-    // Emit event to send message
-    io.to(conversationId).emit("sendMessage", {
-      conversationId,
-      sender: req.user.userId,
-      text,
-    });
-
-    res.status(200).send("Message sent successfully");
+    res.status(200).json({ message: "Message sent successfully" });
   } catch (error) {
     console.error("Error sending message:", error);
     res.status(500).json({ error: "Failed to send message" });
