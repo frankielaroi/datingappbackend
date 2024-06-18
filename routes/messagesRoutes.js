@@ -4,7 +4,7 @@ const http = require("http");
 const socketIo = require("socket.io");
 const jwt = require("jsonwebtoken");
 const amqp = require("amqplib");
-const redis = require("redis");
+const { createClient } = require("redis");
 const Queue = require("bull");
 const Conversation = require("../models/conversationModel");
 const Message = require("../models/messageModel");
@@ -23,7 +23,7 @@ const io = socketIo(server, {
 app.use(express.json());
 
 // Redis Client Setup
-const redisClient = redis.createClient({
+const redisClient = createClient({
   socket: {
     host: process.env.REDIS_HOST,
     port: process.env.REDIS_PORT,
@@ -84,6 +84,10 @@ async function handleMessageProcessing(conversationId, sender, text) {
 
   // Emit message to Socket.io clients
   io.to(conversationId).emit("newMessage", { conversationId, sender, text });
+
+  // Cache the message
+  await redisClient.lPush(`${conversationId}:messages`, JSON.stringify(message));
+  await redisClient.lTrim(`${conversationId}:messages`, 0, 99); // Keep only the latest 100 messages in cache
 }
 
 // Process jobs in the Bull queue
@@ -106,7 +110,7 @@ io.on("connection", (socket) => {
     const token = socket.handshake.query.token;
     try {
       const { userId } = jwt.verify(token, process.env.JWT_SECRET);
-      messageQueue.add({ conversationId, sender: userId, text });
+      await messageQueue.add({ conversationId, sender: userId, text });
     } catch (error) {
       console.error("Error verifying token:", error);
     }
@@ -147,7 +151,7 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
     await message.save();
 
     // Add job to the queue
-    messageQueue.add({ conversationId, sender: req.user.userId, text });
+    await messageQueue.add({ conversationId, sender: req.user.userId, text });
 
     res.status(200).json({ message: "Message sent successfully" });
   } catch (error) {
@@ -156,15 +160,39 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
   }
 });
 
-// Add a GET route
-app.get("/api/messages", async (req, res) => {
+// Define a GET route for retrieving messages from a conversation
+app.get("/api/message", verifyToken, async (req, res) => {
+  const conversationId = req.query.conversationId;
   try {
-    const messages = await Message.find();
+    // Check the type of the key first
+    const keyType = await redisClient.type(`${conversationId}:messages`);
+    if (keyType !== 'list') {
+      await redisClient.del(`${conversationId}:messages`);
+    }
+
+    // Check cache first
+    const cachedMessages = await redisClient.lRange(`${conversationId}:messages`, 0, -1);
+    if (cachedMessages.length > 0) {
+      return res.status(200).json(cachedMessages.map((message) => JSON.parse(message)));
+    }
+
+    // If no cache, query the database
+    const messages = await Message.find({ conversationId });
+    if (!messages) {
+      return res.status(404).json({ error: "Messages not found" });
+    }
+
+    // Cache the messages
+    for (const message of messages) {
+      await redisClient.rPush(`${conversationId}:messages`, JSON.stringify(message));
+    }
+
     res.status(200).json(messages);
   } catch (error) {
-    console.error("Error fetching messages:", error);
-    res.status(500).json({ error: "Failed to fetch messages" });
+    console.error("Error retrieving messages:", error);
+    res.status(500).json({ error: "Failed to retrieve messages" });
   }
 });
+
 
 module.exports = app;
