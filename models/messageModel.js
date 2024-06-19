@@ -18,12 +18,8 @@ const messageSchema = new Schema(
     },
     createdAt: { type: Date, default: Date.now },
   },
-
   {
-    indexes: [
-      { fields: ["conversationId", "createdAt"] },
-      { fields: ["sender", "createdAt"] },
-    ],
+    timestamps: true,
   }
 );
 

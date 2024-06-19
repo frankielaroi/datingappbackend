@@ -1,70 +1,84 @@
-// webSocketServer.js
-const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
-const Conversation = require('../models/conversationModel');
-const Message = require('../models/messageModel');
+const jwt = require("jsonwebtoken");
+const formatMessage = require("../utils/message");
+const { userJoin, userLeave } = require("../utils/user");
+const Conversation = require("../models/conversationModel");
+const Message = require("../models/messageModel");
 
-const messageSockets = (httpServer) => {
-  const io = new Server(httpServer, {
-    cors: {
-      methods: ['GET', 'POST'],
-      credentials: true,
-    },
+const botName = "Frankie Socket";
+
+module.exports = function (io) {
+  // Middleware to verify JWT token for socket connections
+  io.use((socket, next) => {
+    const token = socket.handshake.query.token;
+    if (token) {
+      jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+          console.log("Authentication error:", err);
+          return next(new Error("Authentication error"));
+        }
+        socket.decoded = decoded;
+        next();
+      });
+    } else {
+      console.log("Authentication error: No token provided");
+      next(new Error("Authentication error"));
+    }
   });
 
-  io.on('connection', (socket) => {
-    console.log('New client connected');
+  io.on("connection", (socket) => {
+    const { userId } = socket.decoded; // Get the userId from the decoded token
+    console.log(`New connection from ${userId}`);
 
-    socket.on('joinConversation', async (conversationId) => {
+    socket.on("joinRoom", async ({ conversationId }) => {
+      const room = conversationId; // Use conversationId as room name
+      const user = userJoin(socket.id, userId, room);
+      console.log(`${userId} joined room ${room}`);
+
+      socket.join(user.room);
+
+      // Fetch previous messages from the database
       try {
-        socket.join(conversationId);
-        console.log(`Client joined conversation: ${conversationId}`);
-      } catch (error) {
-        console.error('Error joining conversation:', error);
+        const conversation = await Conversation.findById(room)
+          .populate("messages")
+          .exec();
+        if (conversation) {
+          conversation.messages.forEach((message) => {
+            socket.emit("message", formatMessage(message.sender, message.text));
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching conversation:", err);
       }
-    });
 
-    socket.on('sendMessage', async (data) => {
-      try {
-        const { conversationId, text } = data;
-        const token = socket.handshake.auth.token;
-        const userId = jwt.verify(token, process.env.JWT_SECRET).userId;
-
-        const message = new Message({
-          conversationId,
-          sender: userId,
-          text,
-        });
-
-        const savedMessage = await message.save();
-
-        const conversation = await Conversation.findByIdAndUpdate(
-          conversationId,
-          {
-            $push: { messages: savedMessage._id },
-            $set: { updatedAt: Date.now() },
-          },
-          { new: true }
+      socket.broadcast
+        .to(user.room)
+        .emit(
+          "message",
+          formatMessage(botName, `${userId} has joined the chat`)
         );
 
-        io.to(conversationId).emit('newMessage', savedMessage);
+      socket.on("chatMessage", async (msg) => {
+        const newMessage = new Message({
+          conversationId: room,
+          sender: userId,
+          text: msg,
+        });
+        await newMessage.save();
 
-        console.log('Message sent successfully');
-      } catch (error) {
-        console.error('Error sending message:', error);
-      }
-    });
+        io.to(user.room).emit("message", formatMessage(userId, msg));
+      });
 
-    socket.on('disconnect', () => {
-      console.log('Client disconnected');
-    });
+      socket.on("disconnect", () => {
+        const user = userLeave(socket.id);
 
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
+        if (user) {
+          console.log(`${userId} disconnected from room ${user.room}`);
+          io.to(user.room).emit(
+            "message",
+            formatMessage(botName, `${userId} has left the chat`)
+          );
+        }
+      });
     });
   });
-
-  return io;
 };
-
-module.exports = messageSockets;

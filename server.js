@@ -5,7 +5,7 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
-const messageSockets = require('./routes/websocket')
+const websocket = require('./routes/websocket'); // Import the websocket module
 
 // Load environment variables from .env file
 dotenv.config();
@@ -20,17 +20,16 @@ const PORT = process.env.PORT || 4001;
 
 // Handle MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;
-mongoose.connect(MONGODB_URI);
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
 
 const db = mongoose.connection;
 db.on("error", console.error.bind(console, "MongoDB connection error:"));
 db.once("open", () => {
   console.log("Connected to MongoDB");
 });
-
-// Use body-parser middleware to parse JSON requests
-app.use(bodyParser.json());
-app.use(cors());
 
 // Import and use route handler modules
 const authRoutes = require("./routes/AuthRoutes");
@@ -54,9 +53,17 @@ app.use(postInteraction);
 app.use(MessageRoutes);
 app.use(ConversationRoute);
 
-
 const server = http.createServer(app);
-messageSockets(server);
+
+// Initialize the WebSocket server
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
+
+websocket(io); // Call the websocket function and pass the io instance
 
 // Start the server and listen on specified port
 server.listen(PORT, () => {

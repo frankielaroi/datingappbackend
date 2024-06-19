@@ -1,10 +1,9 @@
-require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const jwt = require("jsonwebtoken");
 const amqp = require("amqplib");
-const { createClient } = require("redis");
+const redis = require("redis");
 const Queue = require("bull");
 const Conversation = require("../models/conversationModel");
 const Message = require("../models/messageModel");
@@ -15,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "*", // Allow all origins for simplicity; adjust as needed
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
@@ -23,7 +22,7 @@ const io = socketIo(server, {
 app.use(express.json());
 
 // Redis Client Setup
-const redisClient = createClient({
+const redisClient = redis.createClient({
   socket: {
     host: process.env.REDIS_HOST,
     port: process.env.REDIS_PORT,
@@ -84,10 +83,6 @@ async function handleMessageProcessing(conversationId, sender, text) {
 
   // Emit message to Socket.io clients
   io.to(conversationId).emit("newMessage", { conversationId, sender, text });
-
-  // Cache the message
-  await redisClient.lPush(`${conversationId}:messages`, JSON.stringify(message));
-  await redisClient.lTrim(`${conversationId}:messages`, 0, 99); // Keep only the latest 100 messages in cache
 }
 
 // Process jobs in the Bull queue
@@ -106,11 +101,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("sendMessage", async (data) => {
-    const { conversationId, text } = data;
-    const token = socket.handshake.query.token;
+    const { conversationId, text, token } = data; // Get token from the data
     try {
       const { userId } = jwt.verify(token, process.env.JWT_SECRET);
-      await messageQueue.add({ conversationId, sender: userId, text });
+      messageQueue.add({ conversationId, sender: userId, text });
     } catch (error) {
       console.error("Error verifying token:", error);
     }
@@ -151,7 +145,7 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
     await message.save();
 
     // Add job to the queue
-    await messageQueue.add({ conversationId, sender: req.user.userId, text });
+    messageQueue.add({ conversationId, sender: req.user.userId, text });
 
     res.status(200).json({ message: "Message sent successfully" });
   } catch (error) {
@@ -164,28 +158,20 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
 app.get("/api/message", verifyToken, async (req, res) => {
   const conversationId = req.query.conversationId;
   try {
-    // Check the type of the key first
-    const keyType = await redisClient.type(`${conversationId}:messages`);
-    if (keyType !== 'list') {
-      await redisClient.del(`${conversationId}:messages`);
-    }
-
     // Check cache first
-    const cachedMessages = await redisClient.lRange(`${conversationId}:messages`, 0, -1);
-    if (cachedMessages.length > 0) {
-      return res.status(200).json(cachedMessages.map((message) => JSON.parse(message)));
+    const cachedMessages = await redisClient.get(`${conversationId}:messages`);
+    if (cachedMessages) {
+      return res.status(200).json(JSON.parse(cachedMessages));
     }
 
-    // If no cache, query the database
-    const messages = await Message.find({ conversationId });
-    if (!messages) {
-      return res.status(404).json({ error: "Messages not found" });
-    }
+    // If no cache, fetch from database
+    const messages = await Message.find({ conversationId }).sort("createdAt");
 
-    // Cache the messages
-    for (const message of messages) {
-      await redisClient.rPush(`${conversationId}:messages`, JSON.stringify(message));
-    }
+    // Cache the result
+    await redisClient.set(
+      `${conversationId}:messages`,
+      JSON.stringify(messages)
+    );
 
     res.status(200).json(messages);
   } catch (error) {
@@ -194,5 +180,5 @@ app.get("/api/message", verifyToken, async (req, res) => {
   }
 });
 
-
+// Start the server
 module.exports = app;
