@@ -1,6 +1,22 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/usermodel");
+const redis = require("redis");
+
+const redisClient = redis.createClient({
+  socket: {
+    host: process.env.REDIS_HOST,
+    port: process.env.REDIS_PORT,
+  },
+  password: process.env.REDIS_PASSWORD,
+});
+
+redisClient.on("error", (err) => {
+  console.error("Redis error:", err);
+});
+
+// Ensure Redis client is connected
+redisClient.connect().catch(console.error);
 
 router.post("/api/match/", async (req, res) => {
   try {
@@ -11,16 +27,28 @@ router.post("/api/match/", async (req, res) => {
       return res.status(400).json({ error: "User ID is required" });
     }
 
-    // Fetch user preferences based on user ID
-    const userPreferences = await User.findById(id).lean();
+    // Check if user preferences are cached in Redis
+    const cachedData = await redisClient.get(`user:${id}`);
+    let userPrefs;
 
-    // Check if user preferences exist
-    if (!userPreferences) {
-      return res.status(404).json({ error: "User not found" });
+    if (cachedData) {
+      // User preferences found in cache
+      userPrefs = JSON.parse(cachedData);
+    } else {
+      // User preferences not found in cache, fetch from database
+      const userPreferences = await User.findById(id).lean();
+
+      // Check if user preferences exist
+      if (!userPreferences) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Ensure that user preferences are retrieved and fallback to an empty object if not found
+      userPrefs = userPreferences?.matchPreferences || {};
+
+      // Cache user preferences in Redis
+      await redisClient.setEx(`user:${id}`, 3600, JSON.stringify(userPrefs));
     }
-
-    // Ensure that user preferences are retrieved and fallback to an empty object if not found
-    const userPrefs = userPreferences?.matchPreferences || {};
 
     // Construct the query to find matching users
     const matches = await User.find({
@@ -68,3 +96,11 @@ router.post("/api/match/", async (req, res) => {
 });
 
 module.exports = router;
+
+// Handle graceful shutdown of Redis client
+process.on('SIGINT', () => {
+  redisClient.quit().then(() => {
+    console.log('Redis client disconnected');
+    process.exit(0);
+  });
+});
