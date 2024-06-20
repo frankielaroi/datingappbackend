@@ -10,6 +10,8 @@ const redisClient = redis.createClient({
     port: process.env.REDIS_PORT,
   },
   password: process.env.REDIS_PASSWORD,
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
 });
 
 redisClient.on("error", (err) => {

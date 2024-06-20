@@ -11,6 +11,8 @@ const redisClient = new Redis({
   host: process.env.REDIS_HOST,
   port: process.env.REDIS_PORT,
   password: process.env.REDIS_PASSWORD,
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
 });
 
 // Create a new Bull queue
@@ -19,6 +21,8 @@ const searchQueue = new Bull("search", {
     host: process.env.REDIS_HOST,
     port: process.env.REDIS_PORT,
     password: process.env.REDIS_PASSWORD,
+    maxRetriesPerRequest: null,
+  enableReadyCheck: false,
   },
 });
 
