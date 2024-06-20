@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "algoliasearch": "^4.23.3",
     "amqplib": "^0.10.4",
     "axios": "^1.6.8",
     "body-parser": "^1.20.2",
@@ -20,5 +21,8 @@
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
     "stream-chat": "^8.31.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
   }
 }

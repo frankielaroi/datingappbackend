@@ -5,7 +5,8 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
-const websocket = require('./routes/websocket'); // Import the websocket module
+const websocket = require("./routes/websocket"); // Import the websocket module
+const populateAlgolia = require("./utils/populate");
 
 // Load environment variables from .env file
 dotenv.config();
@@ -14,22 +15,28 @@ dotenv.config();
 const app = express();
 app.use(bodyParser.json());
 app.use(cors());
-
 // Set the port number from environment variable or default to 4001
 const PORT = process.env.PORT || 4001;
 
 // Handle MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
+if (MONGODB_URI) {
+  mongoose.connect(MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  });
+  const db = mongoose.connection;
+  db.on("error", console.error.bind(console, "MongoDB connection error:"));
+  db.once("open", () => {
+    console.log("Connected to MongoDB");
+  });
+} else {
+  console.error(
+    "MongoDB connection URI is not defined in the environment variables."
+  );
+}
+populateAlgolia();
 
-const db = mongoose.connection;
-db.on("error", console.error.bind(console, "MongoDB connection error:"));
-db.once("open", () => {
-  console.log("Connected to MongoDB");
-});
 
 // Import and use route handler modules
 const authRoutes = require("./routes/AuthRoutes");
