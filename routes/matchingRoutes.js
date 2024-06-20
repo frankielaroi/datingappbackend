@@ -28,12 +28,74 @@ const matchQueue = new Bull('matchQueue', {
   },
 });
 
+// Scoring function
+const calculateScore = (userPrefs, potentialMatch) => {
+  let score = 0;
+
+  if (potentialMatch.age >= userPrefs.minAge && potentialMatch.age <= userPrefs.maxAge) {
+    score += 10;
+  }
+  if (potentialMatch.gender === userPrefs.gender) {
+    score += 10;
+  }
+  if (potentialMatch.location === userPrefs.location) {
+    score += 5;
+  }
+  if (potentialMatch.sexualOrientation === userPrefs.sexualOrientation) {
+    score += 10;
+  }
+  if (potentialMatch.relationshipType === userPrefs.relationshipType) {
+    score += 5;
+  }
+  if (potentialMatch.height >= userPrefs.minHeight && potentialMatch.height <= userPrefs.maxHeight) {
+    score += 5;
+  }
+  if (userPrefs.bodyTypes && userPrefs.bodyTypes.includes(potentialMatch.bodyType)) {
+    score += 5;
+  }
+  if (potentialMatch.smoking === userPrefs.smoking) {
+    score += 3;
+  }
+  if (potentialMatch.drinking === userPrefs.drinking) {
+    score += 3;
+  }
+  if (potentialMatch.exerciseFrequency === userPrefs.exerciseFrequency) {
+    score += 3;
+  }
+  if (potentialMatch.religiousAffiliation === userPrefs.religiousAffiliation) {
+    score += 2;
+  }
+  if (potentialMatch.politicalViews === userPrefs.politicalViews) {
+    score += 2;
+  }
+  if (potentialMatch.culturalBackground === userPrefs.culturalBackground) {
+    score += 2;
+  }
+  if (potentialMatch.introversionExtraversion === userPrefs.introversionExtraversion) {
+    score += 2;
+  }
+  if (potentialMatch.openness === userPrefs.openness) {
+    score += 2;
+  }
+  if (potentialMatch.conscientiousness === userPrefs.conscientiousness) {
+    score += 2;
+  }
+  if (potentialMatch.emotionalStability === userPrefs.emotionalStability) {
+    score += 2;
+  }
+  if (potentialMatch.agreeableness === userPrefs.agreeableness) {
+    score += 2;
+  }
+
+  return score;
+};
+
 // Process the matching jobs
 matchQueue.process(async (job) => {
   const { id, userPrefs } = job.data;
 
   // Construct the query to find matching users
-  const matches = await User.find({
+  const potentialMatches = await User.find({
     $or: [
       { age: { $gte: userPrefs.minAge || 0, $lte: userPrefs.maxAge || 100 } },
       { gender: userPrefs.gender },
@@ -62,15 +124,17 @@ matchQueue.process(async (job) => {
     _id: { $ne: id }, // Exclude the user's own data
   });
 
-  if (matches.length === 0) {
-    const availablePeople = await User.find(
-      { _id: { $ne: id } },
-      { _id: 0, preferences: 1 }
-    ); // Exclude the user's own data
-    return availablePeople;
-  } else {
-    return matches.slice(0, 10);
-  }
+  // Calculate scores for each potential match
+  const scoredMatches = potentialMatches.map((match) => {
+    const score = calculateScore(userPrefs, match);
+    return { match, score };
+  });
+
+  // Sort matches by score in descending order
+  scoredMatches.sort((a, b) => b.score - a.score);
+
+  // Return top 10 matches
+  return scoredMatches.slice(0, 10).map((item) => item.match);
 });
 
 router.post("/api/match/", async (req, res) => {

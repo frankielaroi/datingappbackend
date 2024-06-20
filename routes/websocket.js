@@ -63,7 +63,7 @@ module.exports = function (io) {
           sender: userId,
           text: msg,
         });
-        await newMessage.save();
+        await newMessage.save(); // Save the new message to the database
 
         io.to(user.room).emit("message", formatMessage(userId, msg));
       });
