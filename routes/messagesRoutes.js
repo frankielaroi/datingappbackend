@@ -157,7 +157,7 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
 });
 
 // Define a GET route for retrieving messages from a conversation
-app.get("/api/message", verifyToken, async (req, res) => {
+app.get("/api/messages", verifyToken, async (req, res) => {
   const conversationId = req.query.conversationId;
   try {
     // Check cache first

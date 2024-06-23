@@ -4,9 +4,10 @@ const router = express.Router();
 const mongoose = require("mongoose")
 const User = require("../models/usermodel");
 const Post = require("../models/postModel");
+const {verifyToken} = require('../controllers/verifyToken')
 
 // Route to comment on a post
-router.post("/api/comments", async (req, res) => {
+router.post("/api/comments",verifyToken, async (req, res) => {
   try {
     const { userId, postId, content} = req.body;
 
@@ -47,7 +48,7 @@ router.post("/api/comments", async (req, res) => {
 
 
 // Route to share a post
-router.post("/api/shares", async (req, res) => {
+router.post("/api/shares",verifyToken, async (req, res) => {
   try {
     const { userId, postId } = req.body;
 
@@ -78,7 +79,7 @@ router.post("/api/shares", async (req, res) => {
   }
 });
 
-router.post("/api/likes", async (req, res) => {
+router.post("/api/likes",verifyToken, async (req, res) => {
   try {
     const { userId, postId } = req.body;
 

@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const Post = require("../models/postModel"); // Import the Post model
+const {verifyToken} = require('../controllers/verifyToken')
 
 // Route: Create a new post with photo upload
-router.post("/api/posts", async (req, res) => {
+router.post("/api/posts",verifyToken, async (req, res) => {
   const { userId, content, images } = req.body;
 
   try {
@@ -39,7 +40,7 @@ router.post("/api/posts", async (req, res) => {
 });
 
 // Route: Get a post by ID
-router.get("/api/posts/:postId", async (req, res) => {
+router.get("/api/posts/:postId",verifyToken, async (req, res) => {
   const postId = req.params.postId;
 
   try {
@@ -54,7 +55,7 @@ router.get("/api/posts/:postId", async (req, res) => {
 });
 
 // Route: Get all posts
-router.get("/api/posts", async (req, res) => {
+router.get("/api/posts",verifyToken, async (req, res) => {
   try {
     const posts = await Post.find().populate("userId", "username");
     res.status(200).json(posts);
@@ -84,7 +85,7 @@ router.put("/api/posts/:postId", async (req, res) => {
 });
 
 // Route: Delete a post by ID
-router.delete("/api/posts/:postId", async (req, res) => {
+router.delete("/api/posts/:postId",verifyToken, async (req, res) => {
   const postId = req.params.postId;
 
   try {

@@ -100,7 +100,6 @@ app.post("/api/register", async (req, res) => {
     await sendEmailVerification(email, emailVerificationToken);
 
     // Emit event to notify clients about the new user
-    io.emit("newUser", { email, username });
 
     // Send success response if registration is successful
     res.status(201).json({ message: "User registered successfully." });
@@ -152,6 +151,9 @@ app.post("/api/verify-phone", async (req, res) => {
     // Update the user document with the OTP
     user.otp = otp;
     await user.save();
+
+    // Send OTP via SMS
+    await sendOtpViaSms(mobileNumber, otp);
 
     // Send success response if OTP is sent successfully
     res.status(200).json({ message: "OTP sent to your phone number." });
@@ -213,7 +215,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     // Generate a JWT token for authenticated user
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
-      expiresIn: "1h",
+      expiresIn: "6h",
     });
 
     // Send the token in response if login is successful

@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require("../models/usermodel");
 const redis = require("redis");
 const Bull = require("bull");
+const {verifyToken} = requires('../controllers/verifyToken.js')
 
 const redisClient = redis.createClient({
   socket: {
@@ -139,7 +140,7 @@ matchQueue.process(async (job) => {
   return scoredMatches.slice(0, 10).map((item) => item.match);
 });
 
-router.post("/api/match/", async (req, res) => {
+router.post("/api/match/",verifyToken, async (req, res) => {
   try {
     const { id } = req.body; // Extract id from request body
 

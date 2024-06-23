@@ -5,6 +5,7 @@ const { isValidObjectId } = require("mongoose");
 const Bull = require("bull");
 const Redis = require("ioredis");
 const mongoose = require("mongoose");
+const { verifyToken } = require("../controllers/verifyToken");
 
 // Create a new Redis client
 const redisClient = new Redis({
@@ -35,7 +36,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   .catch((err) => console.error("MongoDB connection error:", err));
 
 // Route to search users by name or username
-router.get("/api/search", async (req, res) => {
+router.get("/api/search",verifyToken, async (req, res) => {
   try {
     const { query } = req.query;
 
