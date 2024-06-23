@@ -3,7 +3,7 @@ const router = express.Router();
 const User = require("../models/usermodel");
 const redis = require("redis");
 const Bull = require("bull");
-const {verifyToken} = requires('../controllers/verifyToken.js')
+const {verifyToken} = require('../controllers/verifyToken.js')
 
 const redisClient = redis.createClient({
   socket: {
