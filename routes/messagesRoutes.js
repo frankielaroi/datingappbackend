@@ -184,3 +184,10 @@ app.get("/api/message", verifyToken, async (req, res) => {
 
 // Start the server
 module.exports = app;
+
+process.on('SIGINT', () => {
+  redisClient.quit().then(() => {
+    console.log('Redis client disconnected');
+    process.exit(0);
+  });
+});

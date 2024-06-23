@@ -70,3 +70,9 @@ router.get("/api/search", async (req, res) => {
 });
 
 module.exports = router;
+process.on('SIGINT', () => {
+  redisClient.quit().then(() => {
+    console.log('Redis client disconnected');
+    process.exit(0);
+  });
+});
