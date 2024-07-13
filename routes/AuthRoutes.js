@@ -1,6 +1,4 @@
 const express = require("express");
-const http = require("http");
-const socketIo = require("socket.io");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const User = require("../models/usermodel");
@@ -15,24 +13,9 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // Setup Express and Socket.io
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
 
 app.use(express.json());
-
-io.on("connection", (socket) => {
-  console.log("New client connected");
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected");
-  });
-});
-
+app.use(express.urlencoded({ extended: true }));
 // Function to send OTP via SMS using Arkesel SMS API
 async function sendOtpViaSms(mobileNumber, otp) {
   const arkeselUrl = "https://sms.arkesel.com/sms/api";

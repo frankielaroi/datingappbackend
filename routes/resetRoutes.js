@@ -36,7 +36,8 @@ router.post("/forgot-password", async (req, res) => {
       from: mailSender,
       to: email,
       subject: "Password Reset Request",
-      text: `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\nPlease click on the following link to reset your password:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.\n`,
+      text: `<!Doctype HTML><html>
+        <h1>Password Reset</h1>You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\nThis is Your Reset Password:\n\n${resetToken}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.\n</html>`,
     };
 
     await transporter.sendMail(mailOptions);
