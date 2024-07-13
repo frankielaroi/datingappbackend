@@ -4,15 +4,26 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const http = require("http");
+const session =require("express-session")
 const { Server } = require("socket.io");
 const websocket = require("./routes/websocket");
 const populateAlgolia = require("./utils/populate");
+const passport = require("./controllers/passport")
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 
 const PORT = process.env.PORT || 4001;
 
@@ -40,7 +51,8 @@ const routes = [
   require("./routes/postRoutes"),
   require("./routes/postInteraction"),
   require("./routes/messagesRoutes"),
-  require("./routes/conversationRoutes")
+  require("./routes/conversationRoutes"),
+  require("./routes/googlrRoutes")
 ];
 
 routes.forEach(route => app.use(route));
