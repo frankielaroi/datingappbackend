@@ -5,64 +5,48 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
-const websocket = require("./routes/websocket"); // Import the websocket module
+const websocket = require("./routes/websocket");
 const populateAlgolia = require("./utils/populate");
 
-// Load environment variables from .env file
 dotenv.config();
 
-// Create an Express app instance
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(cors());
-// Set the port number from environment variable or default to 4001
+
 const PORT = process.env.PORT || 4001;
 
-// Handle MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI;
 if (MONGODB_URI) {
   mongoose.connect(MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-  });
-  const db = mongoose.connection;
-  db.on("error", console.error.bind(console, "MongoDB connection error:"));
-  db.once("open", () => {
+  })
+  .then(() => {
     console.log("Connected to MongoDB");
-  });
+    populateAlgolia();
+  })
+  .catch((err) => console.error("MongoDB connection error:", err));
 } else {
-  console.error(
-    "MongoDB connection URI is not defined in the environment variables."
-  );
+  console.error("MongoDB connection URI is not defined in the environment variables.");
 }
-populateAlgolia();
 
+const routes = [
+  require("./routes/AuthRoutes"),
+  require("./routes/UserRoutes"),
+  require("./routes/resetRoutes"),
+  require("./routes/matchingRoutes"),
+  require("./routes/searchRoutes"),
+  require("./routes/postRoutes"),
+  require("./routes/postInteraction"),
+  require("./routes/messagesRoutes"),
+  require("./routes/conversationRoutes")
+];
 
-// Import and use route handler modules
-const authRoutes = require("./routes/AuthRoutes");
-const userRoutes = require("./routes/UserRoutes");
-const resetRoutes = require("./routes/resetRoutes");
-const matchingRoutes = require("./routes/matchingRoutes");
-const searchRoutes = require("./routes/searchRoutes");
-const postRoutes = require("./routes/postRoutes");
-const postInteraction = require("./routes/postInteraction");
-const MessageRoutes = require("./routes/messagesRoutes");
-const ConversationRoute = require("./routes/conversationRoutes");
-
-// Mount route handler modules at base paths
-app.use(authRoutes);
-app.use(userRoutes);
-app.use(resetRoutes);
-app.use(matchingRoutes);
-app.use(searchRoutes);
-app.use(postRoutes);
-app.use(postInteraction);
-app.use(MessageRoutes);
-app.use(ConversationRoute);
+routes.forEach(route => app.use(route));
 
 const server = http.createServer(app);
 
-// Initialize the WebSocket server
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -70,9 +54,8 @@ const io = new Server(server, {
   },
 });
 
-websocket(io); // Call the websocket function and pass the io instance
+websocket(io);
 
-// Start the server and listen on specified port
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

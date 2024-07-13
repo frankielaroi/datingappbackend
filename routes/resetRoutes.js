@@ -10,15 +10,14 @@ router.post("/forgot-password", async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('email resetPasswordToken resetPasswordExpires');
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
     const resetToken = crypto.randomBytes(20).toString("hex");
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000;
-    // Token expires in 1 hour
+    user.resetPasswordExpires = Date.now() + 3600000; // Token expires in 1 hour
     await user.save();
 
     const mailSender = process.env.MAIL_SENDER;
@@ -32,11 +31,12 @@ router.post("/forgot-password", async (req, res) => {
       },
     });
 
+    const resetUrl = `http://${req.headers.host}/reset-password/${resetToken}`;
     const mailOptions = {
       from: mailSender,
       to: email,
       subject: "Password Reset Request",
-      text: `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\nPlease click on the following link to reset your password:\n\nhttp://${req.headers.host}/reset-password/${resetToken}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.\n`,
+      text: `You are receiving this because you (or someone else) have requested the reset of the password for your account.\n\nPlease click on the following link to reset your password:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.\n`,
     };
 
     await transporter.sendMail(mailOptions);
@@ -48,27 +48,24 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 // Route to handle password reset
-router.post("/reset-password/", async (req, res) => {
-  const { resetToken } = req.query;
+router.post("/reset-password/:resetToken", async (req, res) => {
+  const { resetToken } = req.params;
   const { newPassword } = req.body;
 
   try {
     const user = await User.findOne({
       resetPasswordToken: resetToken,
       resetPasswordExpires: { $gt: Date.now() },
-    });
+    }).select('password resetPasswordToken resetPasswordExpires');
 
     if (!user) {
       return res.status(400).json({ message: "Invalid or expired token" });
     }
 
-    const hashedPassword = crypto
-      .createHash("sha256")
-      .update(newPassword)
-      .digest("hex");
+    const hashedPassword = crypto.createHash("sha256").update(newPassword).digest("hex");
     user.password = hashedPassword;
-    user.resetPasswordToken = null;
-    user.resetPasswordExpires = null;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
     await user.save();
 
     res.status(200).json({ message: "Password reset successful" });

@@ -23,7 +23,7 @@ const searchQueue = new Bull("search", {
     port: process.env.REDIS_PORT,
     password: process.env.REDIS_PASSWORD,
     maxRetriesPerRequest: null,
-  enableReadyCheck: false,
+    enableReadyCheck: false,
   },
 });
 
@@ -36,7 +36,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   .catch((err) => console.error("MongoDB connection error:", err));
 
 // Route to search users by name or username
-router.get("/api/search",verifyToken, async (req, res) => {
+router.get("/api/search", verifyToken, async (req, res) => {
   try {
     const { query } = req.query;
 
@@ -54,11 +54,11 @@ router.get("/api/search",verifyToken, async (req, res) => {
     // Use a regular expression to perform a case-insensitive search
     const users = await User.find({
       $or: [
-        { firstName: { $regex: query, $options: "i" } },
-        { lastName: { $regex: query, $options: "i" } },
-        { username: { $regex: query, $options: "i" } },
+        { firstName: { $regex: new RegExp(query, "i") } },
+        { lastName: { $regex: new RegExp(query, "i") } },
+        { username: { $regex: new RegExp(query, "i") } },
       ],
-    });
+    }).lean().select('firstName lastName username');
 
     // Cache the search result
     await redisClient.set(`search:${query}`, JSON.stringify(users), "EX", 3600); // Cache for 1 hour
@@ -70,10 +70,25 @@ router.get("/api/search",verifyToken, async (req, res) => {
   }
 });
 
+// Process search requests in the background
+searchQueue.process(async (job) => {
+  const { query } = job.data;
+  const users = await User.find({
+    $or: [
+      { firstName: { $regex: new RegExp(query, "i") } },
+      { lastName: { $regex: new RegExp(query, "i") } },
+      { username: { $regex: new RegExp(query, "i") } },
+    ],
+  }).lean().select('firstName lastName username');
+  await redisClient.set(`search:${query}`, JSON.stringify(users), "EX", 3600);
+  return users;
+});
+
 module.exports = router;
-process.on('SIGINT', () => {
-  redisClient.quit().then(() => {
-    console.log('Redis client disconnected');
-    process.exit(0);
-  });
+
+process.on('SIGINT', async () => {
+  await redisClient.quit();
+  await searchQueue.close();
+  console.log('Redis client and Bull queue disconnected');
+  process.exit(0);
 });

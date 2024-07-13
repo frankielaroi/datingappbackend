@@ -104,53 +104,39 @@ const userSchema = new mongoose.Schema({
   comments: [{ content: { type: String, required: true }, postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true } }],
   likes: [{ postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true } }],
   shares: [{ postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true } }]
-});
+}, { timestamps: true });
 
-// Create indexes on specified fields for efficient searching and matching
-userSchema.index({ username: 1 });
-userSchema.index({ age: 1 });
-userSchema.index({ gender: 1 });
-userSchema.index({ location: 1 });
-userSchema.index({ sexualOrientation: 1 });
-userSchema.index({ relationshipType: 1 });
-userSchema.index({ bodyType: 1 });
-userSchema.index({ smoking: 1 });
-userSchema.index({ drinking: 1 });
-userSchema.index({ exerciseFrequency: 1 });
-userSchema.index({ religiousAffiliation: 1 });
-userSchema.index({ politicalViews: 1 });
-userSchema.index({ culturalBackground: 1 });
-userSchema.index({ introversionExtraversion: 1 });
-userSchema.index({ openness: 1 });
-userSchema.index({ conscientiousness: 1 });
-userSchema.index({ emotionalStability: 1 });
-userSchema.index({ agreeableness: 1 });
-userSchema.index({ maritalStatus: 1 });
-userSchema.index({ hasChildren: 1 });
-userSchema.index({ "matchPreferences.minAge": 1 });
-userSchema.index({ "matchPreferences.maxAge": 1 });
-userSchema.index({ "matchPreferences.maxDistance": 1 });
-userSchema.index({ "matchPreferences.minHeight": 1 });
-userSchema.index({ "matchPreferences.maxHeight": 1 });
-userSchema.index({ "matchPreferences.bodyTypes": 1 });
-userSchema.index({ "matchPreferences.personalityTraits.introversionExtraversion": 1 });
-userSchema.index({ "matchPreferences.personalityTraits.openness": 1 });
-userSchema.index({ "matchPreferences.personalityTraits.conscientiousness": 1 });
-userSchema.index({ "matchPreferences.personalityTraits.emotionalStability": 1 });
-userSchema.index({ "matchPreferences.personalityTraits.agreeableness": 1 });
+// Create compound indexes for efficient searching and matching
+userSchema.index({ age: 1, gender: 1, location: 1 });
+userSchema.index({ sexualOrientation: 1, relationshipType: 1 });
+userSchema.index({ bodyType: 1, smoking: 1, drinking: 1 });
+userSchema.index({ exerciseFrequency: 1, religiousAffiliation: 1, politicalViews: 1 });
+userSchema.index({ introversionExtraversion: 1, openness: 1, conscientiousness: 1, emotionalStability: 1, agreeableness: 1 });
+userSchema.index({ maritalStatus: 1, hasChildren: 1 });
+userSchema.index({ "matchPreferences.minAge": 1, "matchPreferences.maxAge": 1, "matchPreferences.maxDistance": 1 });
+userSchema.index({ "matchPreferences.minHeight": 1, "matchPreferences.maxHeight": 1 });
+userSchema.index({ "matchPreferences.bodyTypes": 1, "matchPreferences.personalityTraits.introversionExtraversion": 1, "matchPreferences.personalityTraits.openness": 1, "matchPreferences.personalityTraits.conscientiousness": 1, "matchPreferences.personalityTraits.emotionalStability": 1, "matchPreferences.personalityTraits.agreeableness": 1 });
 
 userSchema.post("save", async function () {
-  // Index the user profile in Algolia
-  const user = this.toObject();
-  user.objectID = user._id.toString();
-  await index.saveObject(user);
-  console.log("User indexed in Algolia:", user);
+  try {
+    // Index the user profile in Algolia
+    const user = this.toObject();
+    user.objectID = user._id.toString();
+    await index.saveObject(user);
+    console.log("User indexed in Algolia:", user._id);
+  } catch (error) {
+    console.error("Error indexing user in Algolia:", error);
+  }
 });
 
 userSchema.post("remove", async function () {
-  // Remove the user profile from Algolia
-  await index.deleteObject(this._id.toString());
-  console.log("User removed from Algolia:", this._id.toString());
+  try {
+    // Remove the user profile from Algolia
+    await index.deleteObject(this._id.toString());
+    console.log("User removed from Algolia:", this._id);
+  } catch (error) {
+    console.error("Error removing user from Algolia:", error);
+  }
 });
 
 // Create a Mongoose model using the schema

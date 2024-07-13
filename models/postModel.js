@@ -7,95 +7,100 @@ const postSchema = new Schema(
     userId: {
       type: Schema.Types.ObjectId,
       required: [true, "Author ID is required"],
+      index: true, // Add index for faster user-based queries
     },
     content: {
       type: String,
       required: [true, "Post content is required"],
-      index: true, // Add index for searching content
-      trim: true, // Trim whitespace from content
-      maxlength: [500, "Post content cannot exceed 500 characters"], // Limit content length
+      index: 'text', // Use text index for better full-text search
+      trim: true,
+      maxlength: [500, "Post content cannot exceed 500 characters"],
     },
     images: [
       {
         type: String,
         validate: {
           validator: function (value) {
-            return (
-              value.startsWith("https://") ||
-              value.startsWith("http://") ||
-              value.startsWith("data:image/jpeg;base64,")
-            );
+            return /^(https?:\/\/|data:image\/jpeg;base64,)/.test(value);
           },
           message: (props) =>
             `${props.value} is not a valid URL or base64 image data`,
         },
-        // Define any additional properties for images
       },
     ],
     shares: [
-    {
-      userId: {
-        type: Schema.Types.ObjectId,
-        ref: "User", // Reference to the User model
+      {
+        userId: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          index: true, // Add index for faster share-based queries
+        },
       },
-    },
-  ],
+    ],
     likes: [
       {
         type: Schema.Types.ObjectId,
-        ref: "User", // Reference to the User model
+        ref: "User",
       },
     ],
+    likesCount: {
+      type: Number,
+      default: 0,
+      index: true, // Add index for faster sorting by likes
+    },
     comments: [
       {
         userId: {
           type: Schema.Types.ObjectId,
-          ref: "User", // Reference to the User model
+          ref: "User",
           required: true,
         },
         content: {
           type: String,
           required: true,
-          index: true, // Add index for searching comment content
-          trim: true, // Trim whitespace from comment content
-          maxlength: [200, "Comment cannot exceed 200 characters"], // Limit comment length
+          trim: true,
+          maxlength: [200, "Comment cannot exceed 200 characters"],
         },
         createdAt: {
           type: Date,
           default: Date.now,
-          index: true, // Index for sorting comments by creation date
         },
       },
     ],
+    commentsCount: {
+      type: Number,
+      default: 0,
+      index: true, // Add index for faster sorting by comments
+    },
     createdAt: {
       type: Date,
       default: Date.now,
-      index: true, // Add index for searching by date
+      index: true,
     },
   },
   {
-    timestamps: true, // Add createdAt and updatedAt fields automatically
-    toJSON: { virtuals: true }, // Include virtual properties when converting to JSON
-    toObject: { virtuals: true }, // Include virtual properties when converting to Object
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-// Add a virtual property to get the total number of likes
-postSchema.virtual("totalLikes").get(function () {
-  return this.likes.length;
+// Use pre-save middleware to update counts
+postSchema.pre('save', function(next) {
+  if (this.isModified('likes')) {
+    this.likesCount = this.likes.length;
+  }
+  if (this.isModified('comments')) {
+    this.commentsCount = this.comments.length;
+  }
+  next();
 });
 
-// Add a virtual property to get the total number of comments
-postSchema.virtual("totalComments").get(function () {
-  return this.comments.length;
-});
-
-// Create a compound index for searching
-postSchema.index({ content: "text", "comments.content": "text" });
-postSchema.index({ likes: 1 }, { sparse: true });
-postSchema.index({ 'comments.content': 'text', 'comments.createdAt': 1 });
-postSchema.index({ content: 'text', createdAt: 1 });
-postSchema.index({ shares: 1 }, { partialFilterExpression: { 'shares.userId': { $exists: true } } });
+// Create compound indexes for efficient querying
+postSchema.index({ content: 'text', 'comments.content': 'text' });
+postSchema.index({ createdAt: -1, likesCount: -1 });
+postSchema.index({ createdAt: -1, commentsCount: -1 });
+postSchema.index({ userId: 1, createdAt: -1 });
 
 // Create a Post model based on the schema
 const Post = mongoose.model("Post", postSchema);

@@ -23,22 +23,12 @@ app.use(express.json());
 
 // Redis Client Setup
 const redisClient = redis.createClient({
-  socket: {
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-  },
+  url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
   password: process.env.REDIS_PASSWORD,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
 });
 
-redisClient.on("error", (error) => {
-  console.error("Redis error:", error);
-});
-
-redisClient.on("connect", () => {
-  console.log("Connected to Redis");
-});
+redisClient.on("error", (error) => console.error("Redis error:", error));
+redisClient.on("connect", () => console.log("Connected to Redis"));
 
 redisClient.connect().catch((err) => {
   console.error("Could not establish a connection with Redis:", err);
@@ -66,24 +56,13 @@ amqp
 
 // Function to handle message processing
 async function handleMessageProcessing(conversationId, sender, text) {
-  const message = new Message({
-    conversationId,
-    sender,
-    text,
-  });
-
+  const message = new Message({ conversationId, sender, text });
   await message.save();
 
-  // Publish message to RabbitMQ
   if (amqpChannel) {
-    amqpChannel.publish(
-      "messages",
-      "",
-      Buffer.from(JSON.stringify({ conversationId, sender, text }))
-    );
+    amqpChannel.publish("messages", "", Buffer.from(JSON.stringify({ conversationId, sender, text })));
   }
 
-  // Emit message to Socket.io clients
   io.to(conversationId).emit("newMessage", { conversationId, sender, text });
 }
 
@@ -102,8 +81,7 @@ io.on("connection", (socket) => {
     console.log(`Client joined conversation: ${conversationId}`);
   });
 
-  socket.on("sendMessage", async (data) => {
-    const { conversationId, text, token } = data; // Get token from the data
+  socket.on("sendMessage", async ({ conversationId, text, token }) => {
     try {
       const { userId } = jwt.verify(token, process.env.JWT_SECRET);
       messageQueue.add({ conversationId, sender: userId, text });
@@ -112,9 +90,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
-    console.log("Client disconnected");
-  });
+  socket.on("disconnect", () => console.log("Client disconnected"));
 });
 
 // Cache middleware
@@ -122,12 +98,10 @@ const cacheMiddleware = async (req, res, next) => {
   const { conversationId } = req.body;
   try {
     const data = await redisClient.get(`${conversationId}:message`);
-
     if (data) {
-      res.status(200).json(JSON.parse(data));
-    } else {
-      next();
+      return res.status(200).json(JSON.parse(data));
     }
+    next();
   } catch (err) {
     console.error("Redis error:", err);
     next();
@@ -145,8 +119,6 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
     });
 
     await message.save();
-
-    // Add job to the queue
     messageQueue.add({ conversationId, sender: req.user.userId, text });
 
     res.status(200).json({ message: "Message sent successfully" });
@@ -158,22 +130,18 @@ app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
 
 // Define a GET route for retrieving messages from a conversation
 app.get("/api/messages", verifyToken, async (req, res) => {
-  const conversationId = req.query.conversationId;
+  const { conversationId } = req.query;
   try {
-    // Check cache first
     const cachedMessages = await redisClient.get(`${conversationId}:messages`);
     if (cachedMessages) {
       return res.status(200).json(JSON.parse(cachedMessages));
     }
 
-    // If no cache, fetch from database
-    const messages = await Message.find({ conversationId }).sort("createdAt");
+    const messages = await Message.find({ conversationId }).sort("createdAt").lean();
 
-    // Cache the result
-    await redisClient.set(
-      `${conversationId}:messages`,
-      JSON.stringify(messages)
-    );
+    await redisClient.set(`${conversationId}:messages`, JSON.stringify(messages), {
+      EX: 300, // Cache for 5 minutes
+    });
 
     res.status(200).json(messages);
   } catch (error) {
@@ -185,9 +153,8 @@ app.get("/api/messages", verifyToken, async (req, res) => {
 // Start the server
 module.exports = app;
 
-process.on('SIGINT', () => {
-  redisClient.quit().then(() => {
-    console.log('Redis client disconnected');
-    process.exit(0);
-  });
+process.on('SIGINT', async () => {
+  await redisClient.quit();
+  console.log('Redis client disconnected');
+  process.exit(0);
 });

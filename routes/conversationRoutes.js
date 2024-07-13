@@ -9,14 +9,11 @@ router.post("/api/conversations", verifyToken, async (req, res) => {
   try {
     const { participants } = req.body;
 
-    // Ensure participants array is provided and contains valid user IDs
-    if (!participants || !Array.isArray(participants) || participants.length < 2) {
+    if (!Array.isArray(participants) || participants.length < 2) {
       return res.status(400).json({ error: "Participants array must contain at least two user IDs" });
     }
 
-    const conversation = new Conversation({ participants });
-    await conversation.save();
-
+    const conversation = await Conversation.create({ participants });
     res.status(201).json(conversation);
   } catch (err) {
     console.error("Error creating conversation:", err);
@@ -29,15 +26,42 @@ router.get("/api/conversations", verifyToken, async (req, res) => {
   try {
     const { userId } = req.user;
 
-    // Retrieve conversations where the user is a participant
-    const conversations = await Conversation.find({ participants: userId })
-      .populate("participants", "_id username")
-      .populate({
-        path: "messages",
-        populate: { path: "sender", select: "_id username" },
-      })
-      .sort({ updatedAt: -1 }) // Sort conversations by updatedAt in descending order
-      .exec();
+    const conversations = await Conversation.aggregate([
+      { $match: { participants: userId } },
+      { $sort: { updatedAt: -1 } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "participants",
+          foreignField: "_id",
+          as: "participants"
+        }
+      },
+      { $project: { "participants._id": 1, "participants.username": 1 } },
+      {
+        $lookup: {
+          from: "messages",
+          let: { conversationId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$conversationId", "$$conversationId"] } } },
+            { $sort: { createdAt: -1 } },
+            { $limit: 1 },
+            {
+              $lookup: {
+                from: "users",
+                localField: "sender",
+                foreignField: "_id",
+                as: "sender"
+              }
+            },
+            { $unwind: "$sender" },
+            { $project: { "sender._id": 1, "sender.username": 1, content: 1, createdAt: 1 } }
+          ],
+          as: "lastMessage"
+        }
+      },
+      { $unwind: { path: "$lastMessage", preserveNullAndEmptyArrays: true } }
+    ]);
 
     res.status(200).json(conversations);
   } catch (err) {

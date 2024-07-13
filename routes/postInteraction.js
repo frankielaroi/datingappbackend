@@ -1,36 +1,31 @@
 // Route to like a post
 const express = require("express");
 const router = express.Router();
-const mongoose = require("mongoose")
+const mongoose = require("mongoose");
 const User = require("../models/usermodel");
 const Post = require("../models/postModel");
-const {verifyToken} = require('../controllers/verifyToken')
+const { verifyToken } = require('../controllers/verifyToken');
 
 // Route to comment on a post
-router.post("/api/comments",verifyToken, async (req, res) => {
+router.post("/api/comments", verifyToken, async (req, res) => {
   try {
-    const { userId, postId, content} = req.body;
+    const { userId, postId, content } = req.body;
 
     // Validate userId, postId, and content
-    if (!userId) {
-      return res.status(400).json({ error: "Invalid request user" });
-    }
-    if (!postId) {
-      return res.status(400).json({ error: "Invalid request post" });
-    }
-    if (!content) {
-      return res.status(400).json({ error: "Invalid request content" });
+    if (!userId || !postId || !content) {
+      return res.status(400).json({ error: "Invalid request parameters" });
     }
 
-    // Find the post by postId
-    const post = await Post.findById(postId);
-    if (!post) {
+    // Find the post by postId and update it in one operation
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $push: { comments: { userId, content } } },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedPost) {
       return res.status(404).json({ error: "Post not found" });
     }
-
-    // Add the new comment to the post
-    post.comments.push({  userId, content });
-    await post.save();
 
     res.status(201).json({ message: "Comment added successfully" });
   } catch (error) {
@@ -39,38 +34,21 @@ router.post("/api/comments",verifyToken, async (req, res) => {
   }
 });
 
-// Sample request:
-// {
-//   "userId": "6456789abcdef012345678",
-//   "postId": "6456789abcdef012345679",
-//   "content": "This is a sample comment."
-// }
-
-
 // Route to share a post
-router.post("/api/shares",verifyToken, async (req, res) => {
+router.post("/api/shares", verifyToken, async (req, res) => {
   try {
     const { userId, postId } = req.body;
 
-    // Validate userId and postId
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    // Validate userId and postId, and update post in one operation
+    const updatedPost = await Post.findOneAndUpdate(
+      { _id: postId, 'shares.userId': { $ne: userId } },
+      { $addToSet: { shares: { userId } } },
+      { new: true, runValidators: true }
+    );
 
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ error: "Post not found" });
+    if (!updatedPost) {
+      return res.status(404).json({ error: "Post not found or already shared" });
     }
-
-    // Check if the post is already shared
-    if (post.shares.some((share) => share.userId.equals(userId))) {
-      return res.status(400).json({ error: "Post already shared" });
-    }
-
-    // Add a new share
-    post.shares.push({ userId });
-    await post.save();
 
     res.status(201).json({ message: "Post shared successfully" });
   } catch (error) {
@@ -79,29 +57,20 @@ router.post("/api/shares",verifyToken, async (req, res) => {
   }
 });
 
-router.post("/api/likes",verifyToken, async (req, res) => {
+router.post("/api/likes", verifyToken, async (req, res) => {
   try {
     const { userId, postId } = req.body;
 
-    // Validate userId and postId
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    // Validate userId and postId, and update post in one operation
+    const updatedPost = await Post.findOneAndUpdate(
+      { _id: postId, likes: { $ne: userId } },
+      { $addToSet: { likes: userId } },
+      { new: true, runValidators: true }
+    );
 
-    const post = await Post.findById(postId);
-    if (!post) {
-      return res.status(404).json({ error: "Post not found" });
+    if (!updatedPost) {
+      return res.status(404).json({ error: "Post not found or already liked" });
     }
-
-    // Check if the post is already liked by the user
-    if (post.likes.some((like) => like.equals(userId))) {
-      return res.status(400).json({ error: "Post already liked" });
-    }
-
-    // Add a new like
-    post.likes.push(userId); // Push the userId directly (assuming userId is a valid ObjectId)
-    await post.save();
 
     res.status(201).json({ message: "Post liked successfully" });
   } catch (error) {

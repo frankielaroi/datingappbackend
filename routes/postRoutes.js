@@ -1,37 +1,19 @@
 const express = require("express");
 const router = express.Router();
-const Post = require("../models/postModel"); // Import the Post model
-const {verifyToken} = require('../controllers/verifyToken')
+const Post = require("../models/postModel");
+const { verifyToken } = require('../controllers/verifyToken');
 
 // Route: Create a new post with photo upload
-router.post("/api/posts",verifyToken, async (req, res) => {
+router.post("/api/posts", verifyToken, async (req, res) => {
   const { userId, content, images } = req.body;
 
+  if (!images || !content || !userId) {
+    return res.status(400).json({ error: "UserId, content, and images are required for the post" });
+  }
+
   try {
-    if (!images) {
-      return res
-        .status(400)
-        .json({ error: "Images are required for the post" });
-    }
-    if (!content) {
-      return res
-        .status(400)
-        .json({ error: "Content is required for the post" });
-    }
-    if (!userId) {
-      return res
-        .status(400)
-        .json({ error: "Author ID and content are required" });
-    }
-
-    const newPost = new Post({
-      userId,
-      content,
-      images,
-    });
-
+    const newPost = new Post({ userId, content, images });
     const savedPost = await newPost.save();
-
     res.status(201).json(savedPost);
   } catch (error) {
     console.error("Error creating post:", error);
@@ -40,11 +22,9 @@ router.post("/api/posts",verifyToken, async (req, res) => {
 });
 
 // Route: Get a post by ID
-router.get("/api/posts/:postId",verifyToken, async (req, res) => {
-  const postId = req.params.postId;
-
+router.get("/api/posts/:postId", verifyToken, async (req, res) => {
   try {
-    const post = await Post.findById(postId).populate("userId", "username");
+    const post = await Post.findById(req.params.postId).populate("userId", "username");
     if (!post) {
       return res.status(404).json({ error: "Post not found" });
     }
@@ -55,9 +35,9 @@ router.get("/api/posts/:postId",verifyToken, async (req, res) => {
 });
 
 // Route: Get all posts
-router.get("/api/posts",verifyToken, async (req, res) => {
+router.get("/api/posts", verifyToken, async (req, res) => {
   try {
-    const posts = await Post.find().populate("userId", "username");
+    const posts = await Post.find().populate("userId", "username").lean();
     res.status(200).json(posts);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -65,15 +45,14 @@ router.get("/api/posts",verifyToken, async (req, res) => {
 });
 
 // Route: Update a post by ID
-router.put("/api/posts/:postId", async (req, res) => {
-  const postId = req.params.postId;
+router.put("/api/posts/:postId", verifyToken, async (req, res) => {
   const { content } = req.body;
 
   try {
     const updatedPost = await Post.findByIdAndUpdate(
-      postId,
+      req.params.postId,
       { content },
-      { new: true }
+      { new: true, runValidators: true }
     );
     if (!updatedPost) {
       return res.status(404).json({ error: "Post not found" });
@@ -85,11 +64,9 @@ router.put("/api/posts/:postId", async (req, res) => {
 });
 
 // Route: Delete a post by ID
-router.delete("/api/posts/:postId",verifyToken, async (req, res) => {
-  const postId = req.params.postId;
-
+router.delete("/api/posts/:postId", verifyToken, async (req, res) => {
   try {
-    const deletedPost = await Post.findByIdAndDelete(postId);
+    const deletedPost = await Post.findByIdAndDelete(req.params.postId);
     if (!deletedPost) {
       return res.status(404).json({ error: "Post not found" });
     }
