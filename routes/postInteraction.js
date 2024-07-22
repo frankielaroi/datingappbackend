@@ -9,7 +9,8 @@ const { verifyToken } = require('../controllers/verifyToken');
 // Route to comment on a post
 router.post("/api/comments", verifyToken, async (req, res) => {
   try {
-    const { userId, postId, content } = req.body;
+    const { postId, content } = req.body;
+    const { userId } = req.user.userId
 
     // Validate userId, postId, and content
     if (!userId || !postId || !content) {
@@ -59,8 +60,8 @@ router.post("/api/shares", verifyToken, async (req, res) => {
 
 router.post("/api/likes", verifyToken, async (req, res) => {
   try {
-    const { userId, postId } = req.body;
-
+    const {  postId } = req.body;
+    const userId = req.user.UserId;
     // Validate userId and postId, and update post in one operation
     const updatedPost = await Post.findOneAndUpdate(
       { _id: postId, likes: { $ne: userId } },

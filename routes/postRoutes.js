@@ -5,7 +5,8 @@ const { verifyToken } = require('../controllers/verifyToken');
 
 // Route: Create a new post with photo upload
 router.post("/api/posts", verifyToken, async (req, res) => {
-  const { userId, content, images } = req.body;
+  const { content, images } = req.body;
+  const userId = req.user.userId;
 
   if (!images || !content || !userId) {
     return res.status(400).json({ error: "UserId, content, and images are required for the post" });

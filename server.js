@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const http = require("http");
-const session =require("express-session")
+const session = require("express-session");
 const { Server } = require("socket.io");
 const websocket = require("./routes/websocket");
 const populateAlgolia = require("./utils/populate");
@@ -24,10 +24,9 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-
 const PORT = process.env.PORT || 4001;
-
 const MONGODB_URI = process.env.MONGODB_URI;
+
 if (MONGODB_URI) {
   mongoose.connect(MONGODB_URI, {
     useNewUrlParser: true,
@@ -52,7 +51,7 @@ const routes = [
   require("./routes/postInteraction"),
   require("./routes/messagesRoutes"),
   require("./routes/conversationRoutes"),
-  require("./routes/googlrRoutes")
+  require("./routes/googleRoutes")
 ];
 
 routes.forEach(route => app.use(route));

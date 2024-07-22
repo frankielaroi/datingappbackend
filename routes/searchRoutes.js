@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const User = require("../models/usermodel");
 const { isValidObjectId } = require("mongoose");
+const GoogleUser = require("../models/googleUser")
 const Bull = require("bull");
 const Redis = require("ioredis");
 const mongoose = require("mongoose");
@@ -52,13 +53,21 @@ router.get("/api/search", verifyToken, async (req, res) => {
     }
 
     // Use a regular expression to perform a case-insensitive search
-    const users = await User.find({
-      $or: [
-        { firstName: { $regex: new RegExp(query, "i") } },
-        { lastName: { $regex: new RegExp(query, "i") } },
-        { username: { $regex: new RegExp(query, "i") } },
-      ],
-    }).lean().select('firstName lastName username');
+    const users = await Promise.all([
+      User.find({
+        $or: [
+          { firstName: { $regex: new RegExp(query, "i") } },
+          { lastName: { $regex: new RegExp(query, "i") } },
+          { username: { $regex: new RegExp(query, "i") } },
+        ],
+      }).lean().select('firstName lastName username'),
+      GoogleUser.find({
+        $or: [
+          { displayName: { $regex: new RegExp(query, "i") } },
+          { username: { $regex: new RegExp(query, "i") } },
+        ],
+      }).lean().select('displayName username'),
+    ])
 
     // Cache the search result
     await redisClient.set(`search:${query}`, JSON.stringify(users), "EX", 3600); // Cache for 1 hour

@@ -108,26 +108,6 @@ const cacheMiddleware = async (req, res, next) => {
   }
 };
 
-// Define a POST route for sending messages
-app.post("/api/message", verifyToken, cacheMiddleware, async (req, res) => {
-  try {
-    const { conversationId, text } = req.body;
-    const message = new Message({
-      conversationId,
-      sender: req.user.userId,
-      text,
-    });
-
-    await message.save();
-    messageQueue.add({ conversationId, sender: req.user.userId, text });
-
-    res.status(200).json({ message: "Message sent successfully" });
-  } catch (error) {
-    console.error("Error sending message:", error);
-    res.status(500).json({ error: "Failed to send message" });
-  }
-});
-
 // Define a GET route for retrieving messages from a conversation
 app.get("/api/messages", verifyToken, async (req, res) => {
   const { conversationId } = req.query;

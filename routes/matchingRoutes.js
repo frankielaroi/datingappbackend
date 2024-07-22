@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/usermodel");
+const GoogleUser = require("../models/googleUser.js")
 const redis = require("redis");
 const Bull = require("bull");
 const { verifyToken } = require('../controllers/verifyToken.js')
@@ -136,7 +137,11 @@ router.post("/api/match/", verifyToken, async (req, res) => {
     if (cachedData) {
       userPrefs = JSON.parse(cachedData);
     } else {
-      const userPreferences = await User.findById(id, { matchPreferences: 1 }).lean();
+      const userPreferences = await Promise.all([
+        User.findById(id, { matchPreferences: 1 }).lean(),
+        GoogleUser.findById(id,{matchPreferences:1}).lean(),
+      ])
+        
 
       if (!userPreferences) {
         return res.status(404).json({ error: "User not found" });

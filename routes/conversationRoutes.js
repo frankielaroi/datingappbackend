@@ -1,19 +1,22 @@
 const express = require("express");
 const router = express.Router();
 const Conversation = require("../models/conversationModel");
-const Message = require("../models/messageModel");
 const { verifyToken } = require("../controllers/verifyToken");
 
 // Create a new conversation
 router.post("/api/conversations", verifyToken, async (req, res) => {
   try {
+    const { userId } = req.user; // Sender's ID from the verified token
     const { participants } = req.body;
 
-    if (!Array.isArray(participants) || participants.length < 2) {
-      return res.status(400).json({ error: "Participants array must contain at least two user IDs" });
+    if (!Array.isArray(participants) || participants.length < 1) {
+      return res.status(400).json({ error: "Participants array must contain at least one user ID" });
     }
 
-    const conversation = await Conversation.create({ participants });
+    // Include the sender's ID in the participants array
+    const allParticipants = [userId, ...participants];
+
+    const conversation = await Conversation.create({ participants: allParticipants });
     res.status(201).json(conversation);
   } catch (err) {
     console.error("Error creating conversation:", err);

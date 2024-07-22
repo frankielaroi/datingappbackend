@@ -17,6 +17,11 @@ const messageSchema = new Schema(
         message: (props) => `${props.value} is not a valid message text!`,
       },
     },
+    status: {
+      type: String,
+      enum: ["sent", "delivered", "read"],
+      default: "sent",
+    },
     createdAt: { type: Date, default: Date.now, index: true },
   },
   {

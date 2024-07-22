@@ -9,8 +9,8 @@ const {
 const Conversation = require("../models/conversationModel");
 const Message = require("../models/messageModel");
 const Redis = require("ioredis");
-const io = require("socket.io")();
-const dotenv = require('dotenv');
+const sanitize = require("sanitize-html");
+const dotenv = require("dotenv");
 dotenv.config();
 const botName = "Frankie Socket";
 
@@ -28,7 +28,7 @@ redisClient.on("error", (err) => {
 
 module.exports = function (io) {
   io.use((socket, next) => {
-    const token = socket.handshake.query.token;
+    const token = socket.handshake.auth.token;
     if (token) {
       jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
         if (err) return next(new Error("Authentication error"));
@@ -52,155 +52,133 @@ module.exports = function (io) {
       try {
         const [conversation, offlineMessages] = await Promise.all([
           Conversation.findById(room).populate("messages").lean().exec(),
-          redisClient.lrange(`offlineMessages:${userId}`, 0, -1)
+          redisClient.lrange(`offlineMessages:${userId}`, 0, -1),
         ]);
 
         if (conversation) {
-          io.to(user.room).emit("bulkMessages", conversation.messages.map(message => 
-            formatMessage(message.sender, message.text)
-          ));
+          io.to(user.room).emit(
+            "bulkMessages",
+            conversation.messages.map((message) =>
+              formatMessage(message.sender, message.text, message.status)
+            )
+          );
         }
 
         if (offlineMessages.length > 0) {
-          const parsedMessages = offlineMessages.map(msg => {
+          const parsedMessages = offlineMessages.map((msg) => {
             const parsedMsg = JSON.parse(msg);
-            return formatMessage(parsedMsg.sender, parsedMsg.text);
+            return formatMessage(parsedMsg.sender, parsedMsg.text, parsedMsg.status);
           });
           io.to(user.room).emit("bulkMessages", parsedMessages);
           await redisClient.del(`offlineMessages:${userId}`);
         }
 
-        io.to(user.room).emit("message", formatMessage(botName, `${userId} has joined the chat`));
+        io.to(user.room).emit(
+          "message",
+          formatMessage(botName, `${userId} has joined the chat`)
+        );
       } catch (err) {
         console.error("Error fetching data:", err);
       }
 
       socket.on("chatMessage", async (msg) => {
-        const newMessage = new Message({
-          conversationId: room,
-          sender: userId,
-          text: msg,
-        });
-
         try {
+          const sanitizedMsg = sanitize(msg);
+          const newMessage = new Message({
+            conversationId: room,
+            sender: userId,
+            text: sanitizedMsg,
+            status: "sent",
+          });
+
           const [savedMessage, conversation] = await Promise.all([
             newMessage.save(),
             Conversation.findByIdAndUpdate(
               room,
               { $push: { messages: newMessage._id } },
               { new: true }
-            ).lean().exec()
+            ).lean().exec(),
           ]);
 
-          const recipientIds = conversation.participants.filter(id => id.toString() !== userId.toString());
+          const recipientIds = conversation.participants.filter(
+            (id) => id.toString() !== userId.toString()
+          );
 
           const sendPromises = recipientIds.map(async (recipientId) => {
             const recipientSocket = findUserSocket(recipientId);
             if (recipientSocket) {
-              io.to(recipientSocket.id).emit("message", formatMessage(userId, msg));
+              io.to(recipientSocket.id).emit(
+                "message",
+                formatMessage(userId, sanitizedMsg, "delivered")
+              );
+              await redisClient.del(`offlineMessages:${recipientId}`);
             } else {
               await redisClient.rpush(
                 `offlineMessages:${recipientId}`,
-                JSON.stringify({ sender: userId, text: msg })
+                JSON.stringify({ sender: userId, text: sanitizedMsg, status: "sent" })
               );
             }
           });
 
           await Promise.all(sendPromises);
 
-          io.to(user.room).emit("message", formatMessage(userId, msg));
+          io.to(user.room).emit("message", formatMessage(userId, sanitizedMsg, "delivered"));
         } catch (err) {
           console.error("Error processing message:", err);
         }
       });
 
+      socket.on("messageRead", async (messageId) => {
+        try {
+          const message = await Message.findByIdAndUpdate(messageId, { status: "read" }, { new: true });
+          if (message) {
+            io.to(room).emit("messageRead", messageId);
+          }
+        } catch (err) {
+          console.error("Error marking message as read:", err);
+        }
+      });
+
+      socket.on("typing", () => {
+        socket.broadcast.to(user.room).emit("typing", userId);
+      });
+
+      socket.on("stopTyping", () => {
+        socket.broadcast.to(user.room).emit("stopTyping", userId);
+      });
+
       socket.on("disconnect", () => {
         const user = userLeave(socket.id);
         if (user) {
-          io.to(user.room).emit("message", formatMessage(botName, `${userId} has left the chat`));
-        }
-      });
-    });
-  });
-};
-
-function findUserSocket(userId) {
-  const user = getCurrentUser(userId);
-  return user ? io.sockets.sockets.get(user.socketId) : null;
-}
-
-process.on("SIGINT", async () => {
-  await redisClient.quit();
-  console.log("Redis client disconnected");
-  process.exit(0);
-});
-
-io.on("connection", (socket) => {
-  socket.on("joinRoom", ({ conversationId }) => {
-    socket.join(conversationId);
-  });
-
-  socket.on("chatMessage", async (data) => {
-    const { conversationId, message } = data;
-    const newMessage = new Message({
-      conversationId,
-      sender: socket.decoded.userId,
-      text: message,
-    });
-
-    try {
-      const [savedMessage, conversation] = await Promise.all([
-        newMessage.save(),
-        Conversation.findByIdAndUpdate(
-          conversationId,
-          { $push: { messages: newMessage._id } },
-          { new: true }
-        ).lean().exec()
-      ]);
-
-      const recipientIds = conversation.participants.filter(id => id.toString() !== socket.decoded.userId);
-
-      const sendPromises = recipientIds.map(async (recipientId) => {
-        const recipientSocket = findUserSocket(recipientId);
-        if (recipientSocket) {
-          io.to(recipientSocket.id).emit("newMessage", {
-            conversationId,
-            message: formatMessage(socket.decoded.userId, message),
-          });
-        } else {
-          await redisClient.rpush(
-            `offlineMessages:${recipientId}`,
-            JSON.stringify({
-              conversationId,
-              sender: socket.decoded.userId,
-              text: message,
-            })
+          io.to(user.room).emit(
+            "message",
+            formatMessage(botName, `${userId} has left the chat`)
           );
         }
       });
+    });
 
-      await Promise.all(sendPromises);
+    socket.on("error", (err) => {
+      console.error("Socket error:", err);
+    });
 
-      io.to(conversationId).emit("newMessage", {
-        conversationId,
-        message: formatMessage(socket.decoded.userId, message),
-      });
-    } catch (err) {
-      console.error("Error processing message:", err);
-    }
+    process.on("uncaughtException", (err) => {
+      console.error("Uncaught Exception:", err);
+    });
+
+    process.on("unhandledRejection", (reason, promise) => {
+      console.error("Unhandled Rejection:", reason);
+    });
   });
 
-  socket.on("disconnect", () => {
-    const user = getCurrentUser(socket.decoded.userId);
-    if (user) {
-      const rooms = Array.from(socket.rooms);
-      rooms.forEach((room) => {
-        socket.leave(room);
-        io.to(room).emit("userLeft", {
-          userId: socket.decoded.userId,
-          room,
-        });
-      });
-    }
+  function findUserSocket(userId) {
+    const user = getCurrentUser(userId);
+    return user ? io.sockets.sockets.get(user.socketId) : null;
+  }
+
+  process.on("SIGINT", async () => {
+    await redisClient.quit();
+    console.log("Redis client disconnected");
+    process.exit(0);
   });
-});
+};

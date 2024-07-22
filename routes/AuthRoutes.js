@@ -2,6 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const User = require("../models/usermodel");
+const GoogleUser = require("../models/googleUser");
 const axios = require("axios");
 const otpGenerator = require("otp-generator");
 const sendEmailVerification = require("../controllers/emailVerification");
@@ -120,8 +121,13 @@ app.post("/api/verify-phone", async (req, res) => {
       specialChars: false,
     });
 
-    const [user] = await Promise.all([
+    const [user,GoogleUser] = await Promise.all([
       User.findOneAndUpdate(
+        { mobileNumber },
+        { $set: { otp } },
+        { new: true }
+      ),
+      GoogleUser.findOneAndUpdate(
         { mobileNumber },
         { $set: { otp } },
         { new: true }
@@ -144,11 +150,19 @@ app.post("/api/verify-otp", async (req, res) => {
   try {
     const { mobileNumber, otp } = req.body;
 
-    const user = await User.findOneAndUpdate(
+    const user = await Promise.all([
+  User.findOneAndUpdate(
       { mobileNumber, otp },
       { $set: { phoneVerified: true }, $unset: { otp: 1 } },
       { new: true }
-    );
+      ),
+      GoogleUser.findOneAndUpdate(
+      { mobileNumber, otp },
+      { $set: { phoneVerified: true }, $unset: { otp: 1 } },
+      { new: true }
+      )
+    ])
+      
 
     if (!user) {
       return res.status(401).json({ error: "Invalid OTP or user not found" });

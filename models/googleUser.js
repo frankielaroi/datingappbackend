@@ -4,8 +4,7 @@ const Schema = mongoose.Schema;
 const googleUserSchema = new mongoose.Schema({
   googleId: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true, trim: true, lowercase: true },
-  firstName: { type: String, trim: true, maxlength: 50 },
-  lastName: { type: String, trim: true, maxlength: 50 },
+  username:{ type:String,required:true,unique:true,trim:true},
   displayName: { type: String, trim: true, maxlength: 100 },
   profilePicture: { type: String },
 
