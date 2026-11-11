@@ -11,3 +11,9 @@ node_modules/
 
 # Environment variables
 .env
+
+# Build output
+dist/
+
+# Firebase service account key
+utils/*firebase-adminsdk*.json

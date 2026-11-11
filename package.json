@@ -29,6 +29,25 @@
     "stream-chat": "^8.31.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "@types/amqplib": "^0.10.8",
+    "@types/body-parser": "^1.19.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
+    "@types/passport": "^1.0.17",
+    "@types/passport-google-oauth20": "^2.0.17",
+    "@types/sanitize-html": "^2.16.2",
+    "nodemon": "^3.1.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "dev": "nodemon --exec tsx server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
   }
 }
