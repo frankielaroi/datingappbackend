@@ -6,7 +6,7 @@ import Conversation from "../models/conversationModel";
 import { verifyToken } from "../controllers/verifyToken";
 import { removeFromList } from "../utils/matchStore";
 import { swipeLimiter } from "../utils/rateLimit";
-import { PRIVATE_FIELDS } from "../utils/userFields";
+import { PUBLIC_PROFILE_PROJECTION } from "../utils/userFields";
 
 const router = express.Router();
 
@@ -58,7 +58,6 @@ router.get("/api/swipes/matches", verifyToken, async (req, res) => {
     const me = new mongoose.Types.ObjectId(String(req.user.userId));
     const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
     const before = typeof req.query.before === "string" ? new Date(req.query.before) : null;
-    const privateFields = Object.fromEntries(PRIVATE_FIELDS.split(" ").map((f) => [f.replace(/^-/, ""), 0]));
 
     const matches = await Swipe.aggregate([
       // Everyone who liked me...
@@ -84,7 +83,7 @@ router.get("/api/swipes/matches", verifyToken, async (req, res) => {
           localField: "swiper",
           foreignField: "_id",
           as: "user",
-          pipeline: [{ $project: privateFields }],
+          pipeline: [{ $project: PUBLIC_PROFILE_PROJECTION }],
         },
       },
       { $unwind: "$user" },

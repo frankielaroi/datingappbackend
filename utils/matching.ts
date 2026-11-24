@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import User from "../models/usermodel";
 import Swipe from "../models/swipeModel";
-import { PRIVATE_FIELDS } from "./userFields";
+import { PRIVATE_FIELDS, toPublicProfile } from "./userFields";
 
 export type Profile = Record<string, any>;
 
@@ -352,9 +352,8 @@ export function stillCompatible(requester: Profile, candidate: Profile, outsideP
 
 export function toPublicMatch(requester: Profile, { match, score, outsidePreferences }: RankedMatch) {
   const d = distanceKm(requester, match);
-  const { geo, ...rest } = match; // exact coordinates stay private
   return {
-    ...rest,
+    ...toPublicProfile(match), // whitelisted fields only; coordinates never leave the server
     matchScore: Math.round(score),
     distanceKm: d == null ? null : Math.max(1, Math.round(d)),
     outsidePreferences,
