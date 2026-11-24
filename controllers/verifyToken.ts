@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { touchActivity } from "../utils/activity";
 const JWT_SECRET = process.env.JWT_SECRET;
 
 function verifyToken(req: Request, res: Response, next: NextFunction) {
@@ -10,6 +11,8 @@ function verifyToken(req: Request, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded; // Attach the entire decoded token, which should include userId
+    // Fire and forget: activity tracking must never slow down or fail a request.
+    touchActivity((decoded as any)?.userId);
     next();
   } catch (err: any) {
     return res.status(401).json({ error: "Invalid Token" });

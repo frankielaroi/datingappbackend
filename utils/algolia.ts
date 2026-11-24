@@ -9,7 +9,7 @@ const client = algoliasearch(
 
 export const index = client.initIndex(process.env.ALGOLIA_INDEX_NAME);
 
-const SEARCHABLE_FIELDS = [
+export const SEARCHABLE_FIELDS = [
   "username",
   "email",
   "age",

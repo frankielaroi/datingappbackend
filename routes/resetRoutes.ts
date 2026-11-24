@@ -2,23 +2,31 @@ import express from "express";
 import crypto from "crypto";
 import User from "../models/usermodel";
 import nodemailer from "nodemailer";
+import { hashPassword, hashToken, isAcceptablePassword, MIN_PASSWORD_LENGTH } from "../utils/password";
+import { passwordResetLimiter } from "../utils/rateLimit";
 
 const router = express.Router();
 
 // Route to handle password reset request
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", passwordResetLimiter, async (req, res) => {
   const { email } = req.body;
 
   try {
-    const user = await User.findOne({ email }).select('email resetPasswordToken resetPasswordExpires');
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const genericReply = { message: "If that email is registered, a reset code has been sent" };
+    if (typeof email !== "string") {
+      return res.status(400).json({ message: "Email is required" });
     }
 
-    const resetToken = crypto.randomBytes(20).toString("hex");
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = new Date(Date.now() + 3600000); // Token expires in 1 hour
-    await user.save();
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    // Only the hash is stored. updateOne (not save) so the Algolia hook doesn't
+    // overwrite the search record with this partial document.
+    const result = await User.updateOne(
+      { email: email.trim().toLowerCase() },
+      { $set: { resetPasswordToken: hashToken(resetToken), resetPasswordExpires: new Date(Date.now() + 3600000) } }
+    );
+    if (result.matchedCount === 0) {
+      return res.status(200).json(genericReply);
+    }
 
     const mailSender = process.env.MAIL_SENDER;
     const mailPassword = process.env.MAIL_PASSWORD;
@@ -41,7 +49,7 @@ router.post("/forgot-password", async (req, res) => {
     };
 
     await transporter.sendMail(mailOptions);
-    res.status(200).json({ message: "Password reset email sent" });
+    res.status(200).json(genericReply);
   } catch (error: any) {
     console.error("Error in forgot password:", error);
     res.status(500).json({ message: "Internal Server Error" });
@@ -49,25 +57,26 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 // Route to handle password reset
-router.post("/reset-password/:resetToken", async (req, res) => {
+router.post("/reset-password/:resetToken", passwordResetLimiter, async (req, res) => {
   const { resetToken } = req.params;
   const { newPassword } = req.body;
 
   try {
-    const user = await User.findOne({
-      resetPasswordToken: resetToken,
-      resetPasswordExpires: { $gt: Date.now() },
-    }).select('password resetPasswordToken resetPasswordExpires');
-
-    if (!user) {
-      return res.status(400).json({ message: "Invalid or expired token" });
+    if (!isAcceptablePassword(newPassword)) {
+      return res.status(400).json({ message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
     }
 
-    const hashedPassword = crypto.createHash("sha256").update(newPassword).digest("hex");
-    user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
+    const result = await User.updateOne(
+      { resetPasswordToken: hashToken(String(resetToken)), resetPasswordExpires: { $gt: new Date() } },
+      {
+        $set: { password: await hashPassword(newPassword) },
+        $unset: { resetPasswordToken: 1, resetPasswordExpires: 1 },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
 
     res.status(200).json({ message: "Password reset successful" });
   } catch (error: any) {

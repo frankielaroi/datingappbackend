@@ -2,11 +2,14 @@ import express from "express";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User from "../models/usermodel";
-import GoogleUser from "../models/googleUser";
 import axios from "axios";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const otpGenerator = require("otp-generator");
 import sendEmailVerification from "../controllers/emailVerification";
+import { hashPassword, isAcceptablePassword, verifyPassword, MIN_PASSWORD_LENGTH } from "../utils/password";
+import { loginLimiter, otpLimiter, registerLimiter } from "../utils/rateLimit";
+
+const OTP_TTL_MS = 10 * 60 * 1000;
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -44,7 +47,7 @@ async function sendOtpViaSms(mobileNumber: string, otp: string) {
 }
 
 // Route to handle user registration
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", registerLimiter, async (req, res) => {
   try {
     const {
       username,
@@ -60,7 +63,11 @@ app.post("/api/register", async (req, res) => {
       firstName,
     } = req.body;
 
-    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
+    if (!isAcceptablePassword(password)) {
+      return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+    }
+
+    const hashedPassword = await hashPassword(password);
     const emailVerificationToken = crypto.randomBytes(32).toString("hex");
 
     const user = new User({
@@ -111,9 +118,12 @@ app.get("/api/verify-email", async (req, res) => {
 });
 
 // Route to handle phone number verification and OTP sending
-app.post("/api/verify-phone", async (req, res) => {
+app.post("/api/verify-phone", otpLimiter, async (req, res) => {
   try {
     const { mobileNumber } = req.body;
+    if (typeof mobileNumber !== "string" || !/^\d{10}$/.test(mobileNumber)) {
+      return res.status(400).json({ error: "A valid 10-digit mobile number is required" });
+    }
 
     const otp = otpGenerator.generate(6, {
       digits: true,
@@ -122,51 +132,35 @@ app.post("/api/verify-phone", async (req, res) => {
       specialChars: false,
     });
 
-    const [user, googleUser] = await Promise.all([
-      User.findOneAndUpdate(
-        { mobileNumber },
-        { $set: { otp } },
-        { new: true }
-      ),
-      GoogleUser.findOneAndUpdate(
-        { mobileNumber },
-        { $set: { otp } },
-        { new: true }
-      ),
-      sendOtpViaSms(mobileNumber, otp)
-    ]);
+    const update = { $set: { otp, otpExpires: new Date(Date.now() + OTP_TTL_MS) } };
+    const user = await User.findOneAndUpdate({ mobileNumber }, update);
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    // Only text numbers that belong to an account (no paying for SMS to
+    // random numbers), but answer the same way so numbers can't be probed.
+    if (user) {
+      await sendOtpViaSms(mobileNumber, otp);
     }
 
-    res.status(200).json({ message: "OTP sent to your phone number." });
+    res.status(200).json({ message: "If this number is registered, a code has been sent." });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Route to handle OTP verification
-app.post("/api/verify-otp", async (req, res) => {
+app.post("/api/verify-otp", otpLimiter, async (req, res) => {
   try {
     const { mobileNumber, otp } = req.body;
+    if (typeof mobileNumber !== "string" || typeof otp !== "string") {
+      return res.status(400).json({ error: "mobileNumber and otp are required" });
+    }
+    const match = { mobileNumber, otp, otpExpires: { $gt: new Date() } };
+    const clear = { $set: { phoneVerified: true }, $unset: { otp: 1, otpExpires: 1 } };
 
-    const [localUser, googleUser] = await Promise.all([
-      User.findOneAndUpdate(
-      { mobileNumber, otp },
-      { $set: { phoneVerified: true }, $unset: { otp: 1 } },
-      { new: true }
-      ),
-      GoogleUser.findOneAndUpdate(
-      { mobileNumber, otp },
-      { $set: { phoneVerified: true }, $unset: { otp: 1 } },
-      { new: true }
-      )
-    ]);
-    const user = localUser || googleUser;
+    const user = await User.findOneAndUpdate(match, clear, { new: true });
 
     if (!user) {
-      return res.status(401).json({ error: "Invalid OTP or user not found" });
+      return res.status(401).json({ error: "Invalid or expired code" });
     }
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1h" });
@@ -177,16 +171,23 @@ app.post("/api/verify-otp", async (req, res) => {
 });
 
 // Route to handle user login
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
 
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
-    if (hashedPassword !== user.password) {
+    const user = await User.findOne({ email: email.trim().toLowerCase() }).select("+password");
+    // Same answer for unknown email and wrong password, so accounts can't be probed.
+    const { valid, needsRehash } = await verifyPassword(password, user?.password);
+    if (!user || !valid) {
       return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    if (needsRehash) {
+      // updateOne skips the save hook, so the Algolia record isn't touched.
+      await User.updateOne({ _id: user._id }, { $set: { password: await hashPassword(password) } });
     }
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "6h" });

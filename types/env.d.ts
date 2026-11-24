@@ -17,7 +17,9 @@ declare global {
       REDIS_HOST: string;
       REDIS_PORT: string;
       REDIS_PASSWORD: string;
-      AMQP_URL?: string;
+      TRUST_PROXY?: string;
+      MATCH_WORKER_CONCURRENCY?: string;
+      MATCH_SWEEP_CRON?: string;
     }
   }
 }

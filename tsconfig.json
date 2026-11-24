@@ -11,6 +11,6 @@
     "forceConsistentCasingInFileNames": true,
     "sourceMap": true
   },
-  "include": ["server.ts", "controllers", "models", "routes", "utils", "types"],
+  "include": ["server.ts", "worker.ts", "controllers", "models", "routes", "utils", "types", "scripts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,142 +1,41 @@
 import express from "express";
-import http from "http";
-import { Server } from "socket.io";
-import type { Channel } from "amqplib";
-import type { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
-import amqp from "amqplib";
-import * as redis from "redis";
-import Queue from "bull";
+import mongoose from "mongoose";
 import Conversation from "../models/conversationModel";
 import Message from "../models/messageModel";
 import { verifyToken } from "../controllers/verifyToken";
 
-// Setup Express
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
+const router = express.Router();
 
-app.use(express.json());
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 100;
 
-// Redis Client Setup
-const redisClient = redis.createClient({
-  url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
-  password: process.env.REDIS_PASSWORD,
-});
-
-redisClient.on("error", (error) => console.error("Redis error:", error));
-redisClient.on("connect", () => console.log("Connected to Redis"));
-
-redisClient.connect().catch((err: any) => {
-  console.error("Could not establish a connection with Redis:", err);
-});
-
-// Bull Queue Setup
-const messageQueue = new Queue("messageQueue", {
-  redis: {
-    host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT),
-    password: process.env.REDIS_PASSWORD,
-  },
-});
-
-// RabbitMQ Channel Initialization
-let amqpChannel: Channel | undefined;
-amqp
-  .connect(process.env.RABBITMQ_URL as string)
-  .then((connection: any) => connection.createChannel())
-  .then((channel) => {
-    amqpChannel = channel;
-    return channel.assertExchange("messages", "fanout", { durable: false });
-  })
-  .catch((error: any) => console.error("Error initializing RabbitMQ:", error));
-
-// Function to handle message processing
-async function handleMessageProcessing(conversationId: string, sender: string, text: string) {
-  const message = new Message({ conversationId, sender, text });
-  await message.save();
-
-  if (amqpChannel) {
-    amqpChannel.publish("messages", "", Buffer.from(JSON.stringify({ conversationId, sender, text })));
-  }
-
-  io.to(conversationId).emit("newMessage", { conversationId, sender, text });
-}
-
-// Process jobs in the Bull queue
-messageQueue.process(async (job) => {
-  const { conversationId, sender, text } = job.data;
-  await handleMessageProcessing(conversationId, sender, text);
-});
-
-// Socket.io connection handling
-io.on("connection", (socket: any) => {
-  console.log("New client connected");
-
-  socket.on("joinConversation", (conversationId: string) => {
-    socket.join(conversationId);
-    console.log(`Client joined conversation: ${conversationId}`);
-  });
-
-  socket.on("sendMessage", async ({ conversationId, text, token }: { conversationId: string; text: string; token: string }) => {
-    try {
-      const { userId } = jwt.verify(token, process.env.JWT_SECRET) as { userId: string };
-      messageQueue.add({ conversationId, sender: userId, text });
-    } catch (error: any) {
-      console.error("Error verifying token:", error);
-    }
-  });
-
-  socket.on("disconnect", () => console.log("Client disconnected"));
-});
-
-// Cache middleware
-const cacheMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-  const { conversationId } = req.body;
+// Messages in a conversation the signed-in user belongs to, newest first.
+// Pass `nextCursor` back as `?before=` to load older messages.
+router.get("/api/messages", verifyToken, async (req, res) => {
   try {
-    const data = await redisClient.get(`${conversationId}:message`);
-    if (data) {
-      return res.status(200).json(JSON.parse(data));
+    const { conversationId } = req.query;
+    if (typeof conversationId !== "string" || !mongoose.isValidObjectId(conversationId)) {
+      return res.status(400).json({ error: "A valid conversationId is required" });
     }
-    next();
-  } catch (err: any) {
-    console.error("Redis error:", err);
-    next();
-  }
-};
-
-// Define a GET route for retrieving messages from a conversation
-app.get("/api/messages", verifyToken, async (req, res) => {
-  const { conversationId } = req.query;
-  try {
-    const cachedMessages = await redisClient.get(`${conversationId}:messages`);
-    if (cachedMessages) {
-      return res.status(200).json(JSON.parse(cachedMessages));
+    const isParticipant = await Conversation.exists({ _id: conversationId, participants: req.user.userId });
+    if (!isParticipant) {
+      return res.status(404).json({ error: "Conversation not found" });
     }
 
-    const messages = await Message.find({ conversationId }).sort("createdAt").lean();
+    const limit = Math.min(Math.max(Number(req.query.limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
+    const before = typeof req.query.before === "string" ? new Date(req.query.before) : null;
+    const filter: Record<string, unknown> = { conversationId };
+    if (before && !isNaN(before.getTime())) filter.createdAt = { $lt: before };
 
-    await redisClient.set(`${conversationId}:messages`, JSON.stringify(messages), {
-      EX: 300, // Cache for 5 minutes
+    const messages = await Message.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+    res.status(200).json({
+      messages,
+      nextCursor: messages.length === limit ? messages[messages.length - 1].createdAt : null,
     });
-
-    res.status(200).json(messages);
   } catch (error: any) {
     console.error("Error retrieving messages:", error);
     res.status(500).json({ error: "Failed to retrieve messages" });
   }
 });
 
-// Start the server
-export default app;
-
-process.on('SIGINT', async () => {
-  await redisClient.quit();
-  console.log('Redis client disconnected');
-  process.exit(0);
-});
+export default router;

@@ -27,9 +27,9 @@ This repository contains the backend code for a dating application built with No
 
 Before you begin, ensure you have the following installed on your local machine:
 
-- Node.js (v14.x or higher)
+- Node.js (v20 or higher)
 - npm (Node.js package manager)
-- MongoDB (installed and running)
+- MongoDB 6+ and Redis 6+ (installed and running)
 
 ## Getting Started
 
@@ -55,30 +55,56 @@ Already configured
 
 ## Usage
 
-Start the server:
+Requires MongoDB and Redis. Copy the variables listed in `types/env.d.ts` into `.env`.
 
-npm start
+```bash
+npm run dev          # API with reload (tsx + nodemon)
+npm run worker       # background match-list worker (run alongside the API)
+npm run seed         # 80 local test users (local MongoDB only)
+npm run build        # compile to dist/
+npm start            # run the compiled API
+npm run start:worker # run the compiled worker
+npm run reindex      # full Algolia re-index (after bulk imports)
+```
 
-The server will be running at `http://localhost:4001` by default.
+The API runs at `http://localhost:4001` by default. `GET /healthz` reports MongoDB and Redis status for load balancers.
+
+## Running more than one instance
+
+The API keeps no state in memory. Sessions, rate-limit counters, Socket.IO rooms and match lists all live in Redis, so any number of API instances can run behind a load balancer. Set `TRUST_PROXY` to the number of proxies in front of the app so rate limits see real client IPs. Run one or more workers; Bull spreads jobs across them.
+
+## Matching
+
+- Candidates come from a `$geoNear` query that applies gender, age, relationship goal, activity (last 30 days) and past swipes inside the geo index scan, then the nearest 500 are scored.
+- Each user's ranked list (up to 200) is stored in Redis and served from there. Entries are re-checked against both profiles before being shown.
+- Lists are rebuilt when they expire (24h), run low, or when someone within 200 km changes their profile. The worker also rebuilds lists for everyone active in the last week each night.
+
+## Migrations
+
+Take a backup first (`mongodump`). Each migration is safe to run more than once and supports `--dry-run`.
+
+```bash
+npm run migrate:001 -- --dry-run
+npm run migrate:001
+```
+
+`001` merges `googleusers` into `users` (linking Google to an existing account with the same email), moves likes, comments, shares, chats and conversation message arrays into their own collections, and replaces the old indexes. It renames `googleusers` to a backup collection rather than dropping it. Non-local databases need `--allow-remote`.
 
 ## Endpoints
 
-The backend exposes the following endpoints:
+- `POST /api/register`, `POST /api/auth/login`
+- `GET /api/verify-email?token=`, `POST /api/verify-phone`, `POST /api/verify-otp`
+- `POST /forgot-password`, `POST /reset-password/:resetToken`
+- `GET /auth/google`, `GET /auth/google/callback`, `GET /logout`
+- `GET /api/users?limit=&after=`, `GET /api/users/:id`, `PUT /api/users/:id`, `DELETE /api/users/:id` (edit and delete: own account only)
+- `POST /api/match/` - your matches (`matchScore` 0-100, `distanceKm`, `outsidePreferences`)
+- `POST /api/swipes` `{ targetId, action: "like" | "pass" }`, `GET /api/swipes/matches`
+- `GET /api/search?query=`
+- `POST /api/conversations`, `GET /api/conversations`, `GET /api/messages?conversationId=&before=`
+- `GET|POST /api/posts`, `GET|PUT|DELETE /api/posts/:postId`, `GET /api/posts/:postId/comments`
+- `POST /api/likes`, `DELETE /api/likes/:postId`, `POST /api/comments`, `POST /api/shares`
 
-- `POST /api/register` - User registration
-- `GET /api/verify-email?token=<verification_token>` - Email verification
-- `POST /api/verify-phone` - Phone number verification and OTP generation
-- `POST /api/verify-otp` - OTP verification for phone number
-- `POST /api/auth/login` - User authentication
-- `POST /forgot-password` - Initiate password reset process (send reset email)
-- `POST /reset-password?resetToken=<reset_token>` - Reset user password
-- `POST /api/match/:id` - Matchmaking based on user preferences
-- `GET /api/users` - Fetch all users
-- `GET /api/users/:id` - Fetch a single user
-- `PUT /api/users?id=<user_id>` - Update a user profile
-- `DELETE /api/users?id=<user_id>` - Delete a user
--  `GET /api/search?query=<search_query>` - Search users by name or username
-
+Socket.IO events: `joinRoom { conversationId }`, `chatMessage { conversationId, text }`, `messageRead`, `typing`, `stopTyping`.
 
 ## Contributing
 

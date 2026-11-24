@@ -1,18 +1,19 @@
 import mongoose from "mongoose";
 const Schema = mongoose.Schema;
 
-// Define the Post schema
+// Likes, comments and shares live in their own collections (postLikeModel,
+// postCommentModel, postShareModel). The post only keeps counters, updated
+// with $inc, so popular posts don't turn into huge documents.
 const postSchema = new Schema(
   {
     userId: {
       type: Schema.Types.ObjectId,
+      ref: "User",
       required: [true, "Author ID is required"],
-      index: true, // Add index for faster user-based queries
     },
     content: {
       type: String,
       required: [true, "Post content is required"],
-      index: 'text', // Use text index for better full-text search
       trim: true,
       maxlength: [500, "Post content cannot exceed 500 characters"],
     },
@@ -20,63 +21,14 @@ const postSchema = new Schema(
       {
         type: String,
         validate: {
-          validator: function (value: string) {
-            return /^(https?:\/\/|data:image\/jpeg;base64,)/.test(value);
-          },
-          message: (props: { value: string }) =>
-            `${props.value} is not a valid URL or base64 image data`,
+          validator: (value: string) => /^(https?:\/\/|data:image\/jpeg;base64,)/.test(value),
+          message: (props: { value: string }) => `${props.value} is not a valid URL or base64 image data`,
         },
       },
     ],
-    shares: [
-      {
-        userId: {
-          type: Schema.Types.ObjectId,
-          ref: "User",
-          index: true, // Add index for faster share-based queries
-        },
-      },
-    ],
-    likes: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
-    likesCount: {
-      type: Number,
-      default: 0,
-      index: true, // Add index for faster sorting by likes
-    },
-    comments: [
-      {
-        userId: {
-          type: Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        content: {
-          type: String,
-          required: true,
-          trim: true,
-          maxlength: [200, "Comment cannot exceed 200 characters"],
-        },
-        createdAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
-    commentsCount: {
-      type: Number,
-      default: 0,
-      index: true, // Add index for faster sorting by comments
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-      index: true,
-    },
+    likesCount: { type: Number, default: 0, min: 0 },
+    commentsCount: { type: Number, default: 0, min: 0 },
+    sharesCount: { type: Number, default: 0, min: 0 },
   },
   {
     timestamps: true,
@@ -85,24 +37,10 @@ const postSchema = new Schema(
   }
 );
 
-// Use pre-save middleware to update counts
-postSchema.pre('save', function(next) {
-  if (this.isModified('likes')) {
-    this.likesCount = this.likes.length;
-  }
-  if (this.isModified('comments')) {
-    this.commentsCount = this.comments.length;
-  }
-  next();
-});
-
-// Create compound indexes for efficient querying
-postSchema.index({ content: 'text', 'comments.content': 'text' });
-postSchema.index({ createdAt: -1, likesCount: -1 });
-postSchema.index({ createdAt: -1, commentsCount: -1 });
+postSchema.index({ content: "text" });
+postSchema.index({ createdAt: -1 });
 postSchema.index({ userId: 1, createdAt: -1 });
 
-// Create a Post model based on the schema
 const Post = mongoose.model("Post", postSchema);
 
 export default Post;

@@ -1,20 +1,32 @@
 import express from "express";
-const router = express.Router();
+import mongoose from "mongoose";
 import Conversation from "../models/conversationModel";
+import User from "../models/usermodel";
 import { verifyToken } from "../controllers/verifyToken";
 
-// Create a new conversation
+const router = express.Router();
+
+const MAX_PARTICIPANTS = 20;
+const PAGE_SIZE = 50;
+
+// Create a conversation between the signed-in user and the given users.
 router.post("/api/conversations", verifyToken, async (req, res) => {
   try {
-    const { userId } = req.user; // Sender's ID from the verified token
+    const userId = String(req.user.userId);
     const { participants } = req.body;
 
-    if (!Array.isArray(participants) || participants.length < 1) {
-      return res.status(400).json({ error: "Participants array must contain at least one user ID" });
+    if (!Array.isArray(participants) || participants.length < 1 || participants.length > MAX_PARTICIPANTS) {
+      return res.status(400).json({ error: `Participants must list 1 to ${MAX_PARTICIPANTS} user IDs` });
+    }
+    if (!participants.every((id) => mongoose.isValidObjectId(id))) {
+      return res.status(400).json({ error: "Participants must be valid user IDs" });
     }
 
-    // Include the sender's ID in the participants array
-    const allParticipants = [userId, ...participants];
+    const allParticipants = [...new Set([userId, ...participants.map(String)])];
+    const existing = await User.countDocuments({ _id: { $in: allParticipants } });
+    if (existing !== allParticipants.length) {
+      return res.status(400).json({ error: "One or more participants don't exist" });
+    }
 
     const conversation = await Conversation.create({ participants: allParticipants });
     res.status(201).json(conversation);
@@ -24,23 +36,26 @@ router.post("/api/conversations", verifyToken, async (req, res) => {
   }
 });
 
-// Get all conversations for a user
+// The signed-in user's conversations, most recently active first, each with
+// its participants and last message.
 router.get("/api/conversations", verifyToken, async (req, res) => {
   try {
-    const { userId } = req.user;
+    // Aggregation doesn't cast types, so the id must be an ObjectId to match.
+    const userId = new mongoose.Types.ObjectId(String(req.user.userId));
 
     const conversations = await Conversation.aggregate([
       { $match: { participants: userId } },
-      { $sort: { updatedAt: -1 } },
+      { $sort: { lastMessageAt: -1, updatedAt: -1 } },
+      { $limit: PAGE_SIZE },
       {
         $lookup: {
           from: "users",
           localField: "participants",
           foreignField: "_id",
-          as: "participants"
-        }
+          as: "participants",
+          pipeline: [{ $project: { username: 1, profilePicture: 1 } }],
+        },
       },
-      { $project: { "participants._id": 1, "participants.username": 1 } },
       {
         $lookup: {
           from: "messages",
@@ -54,16 +69,17 @@ router.get("/api/conversations", verifyToken, async (req, res) => {
                 from: "users",
                 localField: "sender",
                 foreignField: "_id",
-                as: "sender"
-              }
+                as: "sender",
+                pipeline: [{ $project: { username: 1 } }],
+              },
             },
             { $unwind: "$sender" },
-            { $project: { "sender._id": 1, "sender.username": 1, content: 1, createdAt: 1 } }
+            { $project: { sender: 1, text: 1, status: 1, createdAt: 1 } },
           ],
-          as: "lastMessage"
-        }
+          as: "lastMessage",
+        },
       },
-      { $unwind: { path: "$lastMessage", preserveNullAndEmptyArrays: true } }
+      { $unwind: { path: "$lastMessage", preserveNullAndEmptyArrays: true } },
     ]);
 
     res.status(200).json(conversations);

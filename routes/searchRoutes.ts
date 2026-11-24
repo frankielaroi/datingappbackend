@@ -1,73 +1,44 @@
 import express from "express";
-const router = express.Router();
 import User from "../models/usermodel";
-import GoogleUser from "../models/googleUser";
-import Bull from "bull";
-import Redis from "ioredis";
-import mongoose from "mongoose";
 import { verifyToken } from "../controllers/verifyToken";
+import { searchLimiter } from "../utils/rateLimit";
+import { redisClient } from "../utils/redis";
 
-// Create a new Redis client
-const redisClient = new Redis({
-  host: process.env.REDIS_HOST,
-  port: Number(process.env.REDIS_PORT),
-  password: process.env.REDIS_PASSWORD,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-});
+const router = express.Router();
 
-// Create a new Bull queue
-const searchQueue = new Bull("search", {
-  redis: {
-    host: process.env.REDIS_HOST,
-    port: Number(process.env.REDIS_PORT),
-    password: process.env.REDIS_PASSWORD,
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-  },
-});
+const MIN_QUERY = 2;
+const MAX_QUERY = 50;
+const MAX_RESULTS = 20;
+const CACHE_SECONDS = 300;
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI as string)
-  .then(() => console.log("MongoDB connected"))
-  .catch((err: any) => console.error("MongoDB connection error:", err));
+// User input is matched literally: regex special characters are escaped so a
+// crafted query can't run an expensive pattern against the whole collection.
+const literal = (text: string) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 
-// Route to search users by name or username
-router.get("/api/search", verifyToken, async (req, res) => {
+// Search people by name or username.
+router.get("/api/search", verifyToken, searchLimiter, async (req, res) => {
   try {
-    const { query } = req.query;
-
-    // Validate the query parameter
-    if (!query || typeof query !== "string" || query.trim().length === 0) {
-      return res.status(400).json({ error: "Invalid search query" });
+    const raw = req.query.query;
+    const query = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (query.length < MIN_QUERY || query.length > MAX_QUERY) {
+      return res.status(400).json({ error: `Search must be ${MIN_QUERY} to ${MAX_QUERY} characters` });
     }
 
-    // Check if the search result is cached
-    const cachedResult = await redisClient.get(`search:${query}`);
-    if (cachedResult) {
-      return res.status(200).json(JSON.parse(cachedResult));
+    const cacheKey = `search:${query}`;
+    const cached = await redisClient.get(cacheKey);
+    if (cached) {
+      return res.status(200).json(JSON.parse(cached));
     }
 
-    // Use a regular expression to perform a case-insensitive search
-    const users = await Promise.all([
-      User.find({
-        $or: [
-          { firstName: { $regex: new RegExp(query, "i") } },
-          { lastName: { $regex: new RegExp(query, "i") } },
-          { username: { $regex: new RegExp(query, "i") } },
-        ],
-      }).lean().select('firstName lastName username'),
-      GoogleUser.find({
-        $or: [
-          { displayName: { $regex: new RegExp(query, "i") } },
-          { username: { $regex: new RegExp(query, "i") } },
-        ],
-      }).lean().select('displayName username'),
-    ])
+    const pattern = literal(query);
+    const users = await User.find({
+      $or: [{ firstName: pattern }, { lastName: pattern }, { displayName: pattern }, { username: pattern }],
+    })
+      .select("firstName lastName displayName username profilePicture")
+      .limit(MAX_RESULTS)
+      .lean();
 
-    // Cache the search result
-    await redisClient.set(`search:${query}`, JSON.stringify(users), "EX", 3600); // Cache for 1 hour
-
+    await redisClient.set(cacheKey, JSON.stringify(users), { EX: CACHE_SECONDS });
     res.status(200).json(users);
   } catch (error: any) {
     console.error("Error searching users:", error);
@@ -75,25 +46,4 @@ router.get("/api/search", verifyToken, async (req, res) => {
   }
 });
 
-// Process search requests in the background
-searchQueue.process(async (job) => {
-  const { query } = job.data;
-  const users = await User.find({
-    $or: [
-      { firstName: { $regex: new RegExp(query, "i") } },
-      { lastName: { $regex: new RegExp(query, "i") } },
-      { username: { $regex: new RegExp(query, "i") } },
-    ],
-  }).lean().select('firstName lastName username');
-  await redisClient.set(`search:${query}`, JSON.stringify(users), "EX", 3600);
-  return users;
-});
-
 export default router;
-
-process.on('SIGINT', async () => {
-  await redisClient.quit();
-  await searchQueue.close();
-  console.log('Redis client and Bull queue disconnected');
-  process.exit(0);
-});
