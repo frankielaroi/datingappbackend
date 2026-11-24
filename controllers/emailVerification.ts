@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { appBaseUrl } from "../utils/appUrl";
 
 // Function to send email verification message
 async function sendEmailVerification(email: string, emailVerificationToken: string) {
@@ -16,8 +17,7 @@ async function sendEmailVerification(email: string, emailVerificationToken: stri
       },
     });
 
-    // Placeholder URL for verification link
-    const verificationLink = "http://localhost:4001"; // Update with your actual URL later
+    const verificationLink = `${appBaseUrl()}/api/verify-email?token=${encodeURIComponent(emailVerificationToken)}`;
 
     // Email content and options
     const mailOptions = {
@@ -27,7 +27,7 @@ async function sendEmailVerification(email: string, emailVerificationToken: stri
       html: `
         <p>Hello,</p>
         <p>Thank you for registering with Dating App. Please click the link below to verify your email:</p>
-        <p><a href="${verificationLink}/api/verify-email?token=${emailVerificationToken}">Verify Email</a></p>
+        <p><a href="${verificationLink}">Verify Email</a></p>
         <p>If you did not sign up for Dating App, please ignore this email.</p>
       `,
     };

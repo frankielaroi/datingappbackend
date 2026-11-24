@@ -39,7 +39,6 @@ router.post("/forgot-password", passwordResetLimiter, async (req, res) => {
       },
     });
 
-    const resetUrl = `http://${req.headers.host}/reset-password/${resetToken}`;
     const mailOptions = {
       from: mailSender,
       to: email,

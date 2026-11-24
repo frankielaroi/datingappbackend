@@ -2,6 +2,9 @@ declare global {
   namespace NodeJS {
     interface ProcessEnv {
       PORT?: string;
+      // Public base URL for links in emails, e.g. https://api.example.com
+      APP_BASE_URL?: string;
+      NODE_ENV?: string;
       MONGODB_URI?: string;
       SESSION_SECRET: string;
       JWT_SECRET: string;
